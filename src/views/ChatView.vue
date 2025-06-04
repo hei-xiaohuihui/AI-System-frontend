@@ -48,7 +48,11 @@
           </div>
           <div class="message-content">
             <template v-if="message.role === 'assistant'">
-              <div v-if="message.content" class="message-text" v-html="formatMessage(message.content, true)"></div>
+              <div v-if="message.content" 
+                   class="message-text" 
+                   :class="{ 'has-thinking': hasThinkingContent(message.content) }" 
+                   v-html="formatMessage(message.content, true)">
+              </div>
               <div v-if="isThinking && message === currentMessages[currentMessages.length - 1]" class="thinking-bubble">
                 <div class="thinking-indicator">
                   <el-icon><Loading /></el-icon>
@@ -73,14 +77,15 @@
 
       <div class="chat-input">
         <el-input
-          v-model="inputMessage"
+          v-model="currentInputMessage"
           type="textarea"
           :rows="3"
           placeholder="输入消息..."
-          @keydown.enter.exact.prevent="sendMessage"
+          @keydown.enter.exact.prevent="handleEnterPress"
+          @keydown.enter.shift.exact="handleShiftEnterPress"
           :disabled="isLoading"
         />
-        <el-button type="primary" @click="sendMessage" :loading="isLoading" :disabled="!inputMessage.trim()">
+        <el-button type="primary" @click="sendMessage" :loading="isLoading" :disabled="!currentInputMessage.trim()">
           发送
         </el-button>
       </div>
@@ -153,7 +158,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, h } from 'vue'
+import { ref, computed, onMounted, nextTick, h, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
 import { Plus, ChatRound, Delete, Document, Loading } from '@element-plus/icons-vue'
@@ -189,10 +194,25 @@ const isStreaming = ref(false)
 const isThinking = ref(false)
 const thinkingContent = ref('')
 
+// 添加 EventSource 实例的引用
+const currentEventSource = ref(null)
+
+// 添加输入框内容映射
+const inputMessagesMap = ref({})
 
 // 当前对话的消息列表
 const currentMessages = computed(() => {
   return messagesMap.value[currentChatId.value] || []
+})
+
+// 计算属性：当前会话的输入内容
+const currentInputMessage = computed({
+  get: () => inputMessagesMap.value[currentChatId.value] || '',
+  set: (value) => {
+    if (currentChatId.value) {
+      inputMessagesMap.value[currentChatId.value] = value
+    }
+  }
 })
 
 // 创建新对话
@@ -201,10 +221,11 @@ const createNewChat = () => {
     id: Date.now().toString(),
     title: '新对话',
     createdAt: new Date().toISOString(),
-    sessionId: crypto.randomUUID() // 为每个新对话生成一个唯一的sessionId
+    sessionId: crypto.randomUUID()
   }
   chatList.value.unshift(newChat)
   messagesMap.value[newChat.id] = []
+  inputMessagesMap.value[newChat.id] = '' // 初始化新会话的输入内容
   currentChatId.value = newChat.id
 }
 
@@ -217,9 +238,9 @@ const switchChat = (chatId) => {
 // 删除对话
 const deleteChat = async (chatId) => {
   try {
-    // 这里可以添加删除确认
     chatList.value = chatList.value.filter(chat => chat.id !== chatId)
     delete messagesMap.value[chatId]
+    delete inputMessagesMap.value[chatId] // 删除对应的输入内容
     if (currentChatId.value === chatId) {
       currentChatId.value = chatList.value[0]?.id
     }
@@ -230,12 +251,18 @@ const deleteChat = async (chatId) => {
 
 // 发送消息
 const sendMessage = async () => {
-  if (!inputMessage.value.trim() || isLoading.value) return
+  if (!currentInputMessage.value.trim() || isLoading.value) return
+
+  // 关闭之前的连接（如果有）
+  if (currentEventSource.value) {
+    currentEventSource.value.close()
+    currentEventSource.value = null
+  }
 
   const message = {
     id: Date.now().toString(),
     role: 'user',
-    content: inputMessage.value.trim(),
+    content: currentInputMessage.value.trim(),
     timestamp: new Date().toISOString()
   }
 
@@ -243,20 +270,17 @@ const sendMessage = async () => {
     createNewChat()
   }
 
-  // 获取当前对话的sessionId
   const currentChat = chatList.value.find(chat => chat.id === currentChatId.value)
   if (!currentChat) {
     ElMessage.error('对话不存在')
     return
   }
 
-  // 添加用户消息到列表
   if (!messagesMap.value[currentChatId.value]) {
     messagesMap.value[currentChatId.value] = []
   }
   messagesMap.value[currentChatId.value].push(message)
   
-  // 创建一个初始的AI响应消息
   const aiResponse = {
     id: Date.now().toString(),
     role: 'assistant',
@@ -264,10 +288,9 @@ const sendMessage = async () => {
     timestamp: new Date().toISOString()
   }
   
-  // 添加到消息列表
   messagesMap.value[currentChatId.value].push(aiResponse)
   
-  inputMessage.value = ''
+  currentInputMessage.value = ''
   await nextTick()
   scrollToBottom()
 
@@ -275,16 +298,21 @@ const sendMessage = async () => {
     isLoading.value = true
     isStreaming.value = true
 
-    // 构建带有sessionId的URL
     const url = `http://localhost:7816/user/chat/model?sessionId=${encodeURIComponent(currentChat.sessionId)}&message=${encodeURIComponent(message.content)}`
     
-    // 创建 EventSource 实例
-    const eventSource = new EventSource(url)
+    // 创建新的 EventSource 实例并保存引用
+    currentEventSource.value = new EventSource(url)
+    const eventSource = currentEventSource.value
 
     let responseText = ''
     
-    // 处理消息
     eventSource.onmessage = async (event) => {
+      // 检查连接是否已经被关闭或切换到其他对话
+      if (eventSource !== currentEventSource.value) {
+        eventSource.close()
+        return
+      }
+
       console.log('收到消息:', event.data)
       
       // 检查是否是思考内容
@@ -301,26 +329,21 @@ const sendMessage = async () => {
       if (!event.data.includes('</think>')) {
         const currentData = event.data.trim()
         
-        // 如果是空字符串，可能是换行标记
         if (!currentData) {
           return
         }
 
-        // 处理标点符号前的空格
         if (/^[,.!?，。！？、]/.test(currentData) && responseText) {
           responseText = responseText.replace(/\s+$/, '')
         }
 
-        // 处理引号
         if (currentData === '"' || currentData === '"') {
           responseText += currentData
         } else {
-          // 添加适当的空格
           if (responseText) {
             const lastChar = responseText.slice(-1)
             const currentFirstChar = currentData.charAt(0)
             
-            // 判断是否需要添加空格
             const needSpace = 
               !/^[,.!?，。！？、]/.test(currentData) &&
               lastChar !== '"' &&
@@ -336,7 +359,6 @@ const sendMessage = async () => {
           responseText += currentData
         }
 
-        // 更新消息内容
         const lastMessage = messagesMap.value[currentChatId.value].at(-1)
         if (lastMessage && lastMessage.role === 'assistant') {
           lastMessage.content = responseText
@@ -350,33 +372,19 @@ const sendMessage = async () => {
       if (event.data.includes('</think>')) {
         isThinking.value = false
         thinkingContent.value = ''
-        // 在思考结束后添加两个换行
-        responseText += '\n\n'
-        // 更新消息内容
-        const lastMessage = messagesMap.value[currentChatId.value].at(-1)
-        if (lastMessage && lastMessage.role === 'assistant') {
-          lastMessage.content = responseText
-        }
       }
     }
 
-    // 处理错误
     eventSource.onerror = (error) => {
       console.error('发生错误:', error)
       eventSource.close()
+      currentEventSource.value = null
       isStreaming.value = false
       isLoading.value = false
-      isThinking.value = false
       
-      // 如果是新对话，更新标题
       if (chatList.value[0].title === '新对话' && responseText) {
         chatList.value[0].title = message.content.slice(0, 20) + (message.content.length > 20 ? '...' : '')
       }
-    }
-
-    // 处理连接打开
-    eventSource.onopen = () => {
-      console.log('SSE 连接已建立')
     }
 
   } catch (error) {
@@ -384,41 +392,48 @@ const sendMessage = async () => {
     ElMessage.error('发送消息失败')
     isLoading.value = false
     isStreaming.value = false
-    isThinking.value = false
+    if (currentEventSource.value) {
+      currentEventSource.value.close()
+      currentEventSource.value = null
+    }
   }
 }
 
 // 格式化消息内容（支持Markdown）
 const formatMessage = (content, isAIResponse = false) => {
+  if (!content) return ''
   let formattedContent = content.replace(/^\s+|\s+$/g, '')
 
-  // 处理换行符为<br>标签
-  formattedContent = formattedContent.replace(/\n/g, '<br>')
-
-  // 只对 AI 回复进行格式化处理
   if (isAIResponse) {
-    // 1. 处理段落（以句号、问号、感叹号结尾的句子）
-    formattedContent = formattedContent
-      .split(/([.。！？!?]\s*)/)
-      .filter(Boolean)
-      .map(part => part.trim())
-      .join('')
-      .replace(/([.。！？!?])/g, '$1\n')
-      .replace(/\n+/g, '\n')  // 将多个换行符替换为单个换行符
-      .trim()
+    // 检查是否包含思考过程
+    const parts = formattedContent.split(/<\/?think>/)
+    if (parts.length >= 2) {
+      // parts[0] 是开始标签前的内容（如果有）
+      // parts[1] 是思考内容
+      // parts[2] 是最终回答
+      const thinkContent = parts[1]
+      const finalResponse = parts[2] || ''
 
-    // 2. 处理中英文混排
-    formattedContent = formattedContent
-      .replace(/([A-Za-z0-9])([\u4e00-\u9fa5])/g, '$1 $2')
-      .replace(/([\u4e00-\u9fa5])([A-Za-z0-9])/g, '$1 $2')
-      .replace(/\s+/g, ' ')
-      .trim()
+      // 使用marked处理每个部分的Markdown，并添加额外的换行
+      const thinkingHtml = markedInstance.parse(thinkContent.trim())
+      const responseHtml = markedInstance.parse(finalResponse.trim())
+
+      // 组合带样式的HTML，在思考内容和最终回答之间添加明显的分隔
+      return `
+        <div class="thinking-content">
+          <div class="thinking-header">🤔 思考过程</div>
+          ${thinkingHtml}
+        </div>
+        <div class="final-response">
+          <div class="response-header">💡 最终回答</div>
+          ${responseHtml}
+        </div>
+      `.trim()
+    }
   }
 
-  // 使用marked处理Markdown
+  // 如果不是AI回复或没有think标签，正常处理
   const rendered = markedInstance.parse(formattedContent)
-  
-  // 移除marked生成的多余换行
   return rendered
     .replace(/<p>/g, '<p class="message-paragraph">')
     .trim()
@@ -482,7 +497,7 @@ const showUserProfile = async () => {
       const userDetail = response.data.data
       // 更新表单数据
       updateForm.value = {
-        password: '', // 密码始终为空，表示不修改
+        password: '', // 密码始终为空，表示不修改密码
         email: userDetail.email || '',
         phone: userDetail.phone || '',
         gender: userDetail.gender ?? 0
@@ -550,6 +565,11 @@ const handleUpdate = async () => {
   }
 }
 
+// 检查消息是否包含思考内容
+const hasThinkingContent = (content) => {
+  return content && content.includes('<think>');
+}
+
 // 初始化
 onMounted(() => {
   if (!userStore.isAuthenticated) {
@@ -558,6 +578,31 @@ onMounted(() => {
   }
   createNewChat()
 })
+
+// 组件卸载时清理
+onUnmounted(() => {
+  if (currentEventSource.value) {
+    currentEventSource.value.close()
+    currentEventSource.value = null
+  }
+})
+
+const handleEnterPress = (e) => {
+  // 在光标位置插入换行符
+  const textarea = e.target;
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const text = currentInputMessage.value;
+  currentInputMessage.value = text.substring(0, start) + '\n' + text.substring(end);
+  // 下一个 tick 后将光标位置设置到换行符后
+  nextTick(() => {
+    textarea.selectionStart = textarea.selectionEnd = start + 1;
+  });
+}
+
+const handleShiftEnterPress = () => {
+  sendMessage();
+}
 </script>
 
 <style scoped>
@@ -722,6 +767,7 @@ onMounted(() => {
 .message.assistant .message-text {
   background-color: #ecf5ff;
   border-radius: 0 12px 12px 12px;
+  padding: 12px 16px;
 }
 
 .message.user .message-text {
@@ -1093,5 +1139,59 @@ onMounted(() => {
   to {
     transform: rotate(360deg);
   }
+}
+
+.message-text :deep(.ai-thinking) {
+  background-color: #f6f8fa;
+  border-left: 4px solid #95a5a6;
+  padding: 12px 16px;
+  margin: 8px 0;
+  border-radius: 6px;
+  font-family: monospace;
+  color: #606060;
+}
+
+.message.assistant .message-text.has-thinking :deep(.thinking-content) {
+  display: block;
+  background-color: #f8f9fa;
+  padding: 12px 16px;
+  margin: -12px -16px 12px -16px;
+  border-radius: 0 12px 12px 0;
+  border-left: 4px solid #409EFF;
+}
+
+.message.assistant .message-text.has-thinking :deep(.final-response) {
+  display: block;
+  background-color: #fff;
+  padding: 12px 16px;
+  margin: -12px -16px -12px -16px;
+  border-radius: 0 12px 12px 0;
+  border-left: 4px solid #67C23A;
+}
+
+.message-text :deep(.thinking-header),
+.message-text :deep(.response-header) {
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: #606266;
+  font-size: 0.9em;
+}
+
+.message-text :deep(.thinking-header) {
+  color: #409EFF;
+}
+
+.message-text :deep(.response-header) {
+  color: #67C23A;
+}
+
+.message-text :deep(.thinking-content),
+.message-text :deep(.final-response) {
+  position: relative;
+}
+
+.message-text :deep(.thinking-content p:last-child),
+.message-text :deep(.final-response p:last-child) {
+  margin-bottom: 0;
 }
 </style> 
