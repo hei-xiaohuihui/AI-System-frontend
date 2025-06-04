@@ -47,11 +47,25 @@
             </el-avatar>
           </div>
           <div class="message-content">
-            <div class="message-text" v-html="formatMessage(message.content)"></div>
+            <div class="message-text" v-html="formatMessage(message.content.trim(), message.role === 'assistant')"></div>
             <div class="message-actions" v-if="message.role === 'assistant'">
               <el-button type="text" size="small" @click="copyMessage(message.content)">
                 <el-icon><Document /></el-icon>复制
               </el-button>
+            </div>
+          </div>
+        </div>
+        <div v-if="isThinking" class="message assistant thinking">
+          <div class="avatar">
+            <el-avatar :size="40">AI</el-avatar>
+          </div>
+          <div class="message-content">
+            <div class="thinking-indicator">
+              <el-icon><Loading /></el-icon>
+              <span>AI 正在思考...</span>
+            </div>
+            <div class="thinking-content" v-if="thinkingContent">
+              {{ thinkingContent }}
             </div>
           </div>
         </div>
@@ -154,11 +168,14 @@
 import { ref, computed, onMounted, nextTick, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
-import { Plus, ChatRound, Delete, Document } from '@element-plus/icons-vue'
+import { Plus, ChatRound, Delete, Document, Loading } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 import * as marked from 'marked'
 import hljs from 'highlight.js'
+
+// 使用 crypto API 生成 UUID
+const crypto = window.crypto
 
 // 配置marked
 const markedInstance = new marked.Marked({
@@ -179,6 +196,11 @@ const isLoading = ref(false)
 const currentChatId = ref(null)
 const chatList = ref([])
 const messagesMap = ref({})
+const isStreaming = ref(false)
+const currentStreamingMessage = ref('')
+const isThinking = ref(false)
+const thinkingContent = ref('')
+const actualResponse = ref('')
 
 // 当前对话的消息列表
 const currentMessages = computed(() => {
@@ -190,7 +212,8 @@ const createNewChat = () => {
   const newChat = {
     id: Date.now().toString(),
     title: '新对话',
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    sessionId: crypto.randomUUID() // 为每个新对话生成一个唯一的sessionId
   }
   chatList.value.unshift(newChat)
   messagesMap.value[newChat.id] = []
@@ -232,42 +255,176 @@ const sendMessage = async () => {
     createNewChat()
   }
 
+  // 获取当前对话的sessionId
+  const currentChat = chatList.value.find(chat => chat.id === currentChatId.value)
+  if (!currentChat) {
+    ElMessage.error('对话不存在')
+    return
+  }
+
   messagesMap.value[currentChatId.value].push(message)
   inputMessage.value = ''
   scrollToBottom()
 
   try {
     isLoading.value = true
-    // 这里替换为实际的API接口地址
-    const response = await axios.post('/api/chat', {
-      message: message.content,
-      chatId: currentChatId.value
-    })
-
+    isStreaming.value = true
+    actualResponse.value = ''
+    
+    // 创建一个初始的AI响应消息
     const aiResponse = {
       id: Date.now().toString(),
       role: 'assistant',
-      content: response.data.message,
+      content: '',
       timestamp: new Date().toISOString()
     }
-
-    messagesMap.value[currentChatId.value].push(aiResponse)
     
-    // 如果是新对话，更新标题
-    if (chatList.value[0].title === '新对话') {
-      chatList.value[0].title = message.content.slice(0, 20) + (message.content.length > 20 ? '...' : '')
+    // 添加到消息列表
+    messagesMap.value[currentChatId.value].push(aiResponse)
+    currentStreamingMessage.value = ''
+
+    // 构建带有sessionId的URL
+    const url = `http://localhost:7816/user/chat/model?sessionId=${encodeURIComponent(currentChat.sessionId)}&message=${encodeURIComponent(message.content)}`
+    
+    // 创建 EventSource 实例
+    const eventSource = new EventSource(url)
+
+    // 处理消息
+    eventSource.onmessage = (event) => {
+      console.log('收到消息:', event.data)
+      
+      // 检查是否是思考内容
+      if (event.data.includes('<think>')) {
+        isThinking.value = true
+        const thinkMatch = event.data.match(/<think>([\s\S]*?)<\/think>/)
+        if (thinkMatch) {
+          thinkingContent.value = thinkMatch[1].trim()
+        }
+        return
+      }
+      
+      // 如果不是思考内容，也不是结束标签，则添加到实际回复中
+      if (!event.data.includes('</think>')) {
+        const currentData = event.data.trim()
+        
+        // 如果是空字符串，可能是换行标记
+        if (!currentData) {
+          return
+        }
+
+        // 处理标点符号前的空格
+        const punctuationStart = /^[,.!?，。！？、]/.test(currentData)
+        if (punctuationStart && actualResponse.value) {
+          // 如果是标点符号开头，移除前面可能的空格
+          actualResponse.value = actualResponse.value.replace(/\s+$/, '')
+        }
+
+        // 处理引号
+        if (currentData === '"' || currentData === '"') {
+          actualResponse.value += currentData
+          return
+        }
+
+        // 添加适当的空格
+        if (actualResponse.value) {
+          const lastChar = actualResponse.value.slice(-1)
+          const currentFirstChar = currentData.charAt(0)
+          
+          // 判断是否需要添加空格
+          const needSpace = 
+            // 不是在标点符号之前
+            !punctuationStart &&
+            // 不是在引号之后
+            lastChar !== '"' &&
+            // 确保两个字符都不是空白字符
+            lastChar.trim() && currentFirstChar.trim() &&
+            // 如果两边都是英文字母或数字，或者一边是中文一边是英文，则需要空格
+            ((/[a-zA-Z0-9]/.test(lastChar) && /[a-zA-Z0-9\u4e00-\u9fa5]/.test(currentFirstChar)) ||
+             (/[\u4e00-\u9fa5]/.test(lastChar) && /[a-zA-Z0-9]/.test(currentFirstChar)))
+
+          if (needSpace) {
+            actualResponse.value += ' '
+          }
+        }
+
+        actualResponse.value += currentData
+        currentStreamingMessage.value = actualResponse.value
+        aiResponse.content = actualResponse.value
+        nextTick(() => {
+          scrollToBottom()
+        })
+      }
+      
+      // 如果收到结束标签，清除思考状态
+      if (event.data.includes('</think>')) {
+        isThinking.value = false
+        thinkingContent.value = ''
+      }
     }
+
+    // 处理错误
+    eventSource.onerror = (error) => {
+      console.error('发生错误:', error)
+      eventSource.close()
+      isStreaming.value = false
+      isLoading.value = false
+    }
+
+    // 处理连接打开
+    eventSource.onopen = () => {
+      console.log('SSE 连接已建立')
+    }
+
+    // 监听连接状态
+    const checkConnection = setInterval(() => {
+      if (eventSource.readyState === EventSource.CLOSED) {
+        clearInterval(checkConnection)
+        isStreaming.value = false
+        isLoading.value = false
+        
+        // 如果是新对话，更新标题
+        if (chatList.value[0].title === '新对话') {
+          chatList.value[0].title = message.content.slice(0, 20) + (message.content.length > 20 ? '...' : '')
+        }
+      }
+    }, 100)
+
   } catch (error) {
+    console.error('发送消息失败:', error)
     ElMessage.error('发送消息失败')
-  } finally {
     isLoading.value = false
-    scrollToBottom()
+    isStreaming.value = false
   }
 }
 
 // 格式化消息内容（支持Markdown）
-const formatMessage = (content) => {
-  return markedInstance.parse(content)
+const formatMessage = (content, isAIResponse = false) => {
+  let formattedContent = content
+
+  // 只对 AI 回复进行格式化处理
+  if (isAIResponse) {
+    // 1. 处理段落（以句号、问号、感叹号结尾的句子）
+    formattedContent = content
+      .split(/([.。！？!?]\s*)/)
+      .filter(Boolean)
+      .map(part => part.trim())
+      .join('')
+      .replace(/([.。！？!?])/g, '$1\n\n')
+      .replace(/\n\s*\n/g, '\n')  // 移除多余的空行
+      .trim()
+
+    // 2. 处理中英文混排
+    formattedContent = formattedContent
+      // 在中英文之间添加空格
+      .replace(/([A-Za-z0-9])([\u4e00-\u9fa5])/g, '$1 $2')
+      .replace(/([\u4e00-\u9fa5])([A-Za-z0-9])/g, '$1 $2')
+      // 移除多余的空格和换行
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
+  // 使用marked处理Markdown
+  return markedInstance.parse(formattedContent)
 }
 
 // 复制消息内容
@@ -511,32 +668,66 @@ onMounted(() => {
 .message {
   display: flex;
   margin-bottom: 20px;
+  width: 100%;
+}
+
+.message.user {
+  flex-direction: row-reverse;
 }
 
 .message .avatar {
   margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.message.user .avatar {
+  margin-right: 0;
+  margin-left: 12px;
 }
 
 .message-content {
-  flex: 1;
+  flex: 0 1 auto;
   max-width: 80%;
+  min-width: 50px;
+}
+
+.message.user .message-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 .message-text {
   padding: 12px 16px;
-  border-radius: 8px;
+  border-radius: 12px;
   background-color: #f5f5f5;
   line-height: 1.5;
+  font-size: 14px;
+  word-wrap: break-word;
+  white-space: normal;
 }
 
 .message.assistant .message-text {
   background-color: #ecf5ff;
+  border-radius: 0 12px 12px 12px;
+}
+
+.message.user .message-text {
+  background-color: #95EC69;
+  color: #000000;
+  border-radius: 12px 0 12px 12px;
 }
 
 .message-actions {
   margin-top: 4px;
   display: flex;
   justify-content: flex-end;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.message-content:hover .message-actions {
+  opacity: 1;
 }
 
 .chat-input {
@@ -553,35 +744,86 @@ onMounted(() => {
 
 .typing-indicator {
   display: flex;
-  padding: 12px 16px;
+  padding: 8px 12px;
   background: #ecf5ff;
-  border-radius: 8px;
+  border-radius: 12px;
+  width: fit-content;
 }
 
-.typing-indicator span {
-  height: 8px;
-  width: 8px;
-  background: #4b9eff;
-  border-radius: 50%;
-  margin: 0 2px;
-  display: inline-block;
-  animation: bounce 1.3s linear infinite;
+.thinking-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #409EFF;
+  margin-bottom: 4px;
+  font-size: 13px;
 }
 
-.typing-indicator span:nth-child(2) {
-  animation-delay: 0.15s;
+.thinking-content {
+  padding: 8px 12px;
+  background-color: #F5F7FA;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.4;
+  white-space: pre-line;
+  max-width: 100%;
 }
 
-.typing-indicator span:nth-child(3) {
-  animation-delay: 0.3s;
+/* 消息内容样式 */
+.message-text :deep(p) {
+  margin: 0;
+  line-height: 1.5;
+  white-space: normal;
 }
 
-@keyframes bounce {
-  0%, 60%, 100% {
-    transform: translateY(0);
+.message-text :deep(p + p) {
+  margin-top: 8px;
+}
+
+.message-text :deep(pre) {
+  margin: 8px 0;
+  padding: 12px;
+  background-color: #f6f8fa;
+  border-radius: 6px;
+  font-size: 13px;
+  overflow-x: auto;
+}
+
+.message-text :deep(code) {
+  font-family: 'Fira Code', monospace;
+  font-size: 13px;
+  padding: 2px 4px;
+  background-color: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+}
+
+.message-text :deep(ul), 
+.message-text :deep(ol) {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.message-text :deep(li) {
+  margin: 4px 0;
+}
+
+.message-text :deep(blockquote) {
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 4px solid #ddd;
+  color: #666;
+}
+
+/* 响应式布局 */
+@media screen and (max-width: 768px) {
+  .message-content {
+    max-width: 90%;
   }
-  30% {
-    transform: translateY(-4px);
+  
+  .message-text {
+    font-size: 13px;
+    padding: 10px 12px;
   }
 }
 
@@ -818,5 +1060,22 @@ onMounted(() => {
 
 :deep(.el-form-item:last-child) {
   margin-bottom: 0;
+}
+
+.thinking {
+  opacity: 0.8;
+}
+
+.thinking-indicator .el-icon {
+  animation: rotate 1s linear infinite;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style> 
