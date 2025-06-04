@@ -48,7 +48,7 @@
           </div>
           <div class="message-content">
             <template v-if="message.role === 'assistant'">
-              <div v-if="message.content" class="message-text" v-html="formatMessage(message.content.trim(), true)"></div>
+              <div v-if="message.content" class="message-text" v-html="formatMessage(message.content, true)"></div>
               <div v-if="isThinking && message === currentMessages[currentMessages.length - 1]" class="thinking-bubble">
                 <div class="thinking-indicator">
                   <el-icon><Loading /></el-icon>
@@ -65,7 +65,7 @@
               </div>
             </template>
             <template v-else>
-              <div class="message-text" v-html="formatMessage(message.content.trim(), false)"></div>
+              <div class="message-text" v-html="formatMessage(message.content, false)"></div>
             </template>
           </div>
         </div>
@@ -167,13 +167,14 @@ const crypto = window.crypto
 
 // 配置marked
 const markedInstance = new marked.Marked({
+  breaks: false,
+  gfm: true,
   highlight: function (code, lang) {
     if (lang && hljs.getLanguage(lang)) {
       return hljs.highlight(lang, code).value
     }
     return hljs.highlightAuto(code).value
-  },
-  breaks: true
+  }
 })
 
 const router = useRouter()
@@ -185,10 +186,9 @@ const currentChatId = ref(null)
 const chatList = ref([])
 const messagesMap = ref({})
 const isStreaming = ref(false)
-const currentStreamingMessage = ref('')
 const isThinking = ref(false)
 const thinkingContent = ref('')
-const actualResponse = ref('')
+
 
 // 当前对话的消息列表
 const currentMessages = computed(() => {
@@ -350,6 +350,13 @@ const sendMessage = async () => {
       if (event.data.includes('</think>')) {
         isThinking.value = false
         thinkingContent.value = ''
+        // 在思考结束后添加两个换行
+        responseText += '\n\n'
+        // 更新消息内容
+        const lastMessage = messagesMap.value[currentChatId.value].at(-1)
+        if (lastMessage && lastMessage.role === 'assistant') {
+          lastMessage.content = responseText
+        }
       }
     }
 
@@ -383,32 +390,38 @@ const sendMessage = async () => {
 
 // 格式化消息内容（支持Markdown）
 const formatMessage = (content, isAIResponse = false) => {
-  let formattedContent = content
+  let formattedContent = content.replace(/^\s+|\s+$/g, '')
+
+  // 处理换行符为<br>标签
+  formattedContent = formattedContent.replace(/\n/g, '<br>')
 
   // 只对 AI 回复进行格式化处理
   if (isAIResponse) {
     // 1. 处理段落（以句号、问号、感叹号结尾的句子）
-    formattedContent = content
+    formattedContent = formattedContent
       .split(/([.。！？!?]\s*)/)
       .filter(Boolean)
       .map(part => part.trim())
       .join('')
-      .replace(/([.。！？!?])/g, '$1\n\n')
-      .replace(/\n\s*\n/g, '\n')  // 移除多余的空行
+      .replace(/([.。！？!?])/g, '$1\n')
+      .replace(/\n+/g, '\n')  // 将多个换行符替换为单个换行符
       .trim()
 
     // 2. 处理中英文混排
     formattedContent = formattedContent
-      // 在中英文之间添加空格
       .replace(/([A-Za-z0-9])([\u4e00-\u9fa5])/g, '$1 $2')
       .replace(/([\u4e00-\u9fa5])([A-Za-z0-9])/g, '$1 $2')
-      // 移除多余的空格和换行
       .replace(/\s+/g, ' ')
       .trim()
   }
 
   // 使用marked处理Markdown
-  return markedInstance.parse(formattedContent)
+  const rendered = markedInstance.parse(formattedContent)
+  
+  // 移除marked生成的多余换行
+  return rendered
+    .replace(/<p>/g, '<p class="message-paragraph">')
+    .trim()
 }
 
 // 复制消息内容
@@ -670,14 +683,13 @@ onMounted(() => {
 }
 
 .message-content {
-  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   max-width: 80%;
-  min-width: 50px;
 }
 
 .message.user .message-content {
-  display: flex;
-  flex-direction: column;
   align-items: flex-end;
 }
 
@@ -688,7 +700,23 @@ onMounted(() => {
   line-height: 1.5;
   font-size: 14px;
   word-wrap: break-word;
-  white-space: pre-wrap;
+  white-space: normal;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.message-text :deep(p) {
+  margin: 0;
+  padding: 0;
+}
+
+.message-text :deep(.message-paragraph) {
+  margin: 0;
+  padding: 0;
+}
+
+.message-text :deep(p:not(:last-child)) {
+  margin-bottom: 8px;
 }
 
 .message.assistant .message-text {
