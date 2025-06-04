@@ -47,38 +47,26 @@
             </el-avatar>
           </div>
           <div class="message-content">
-            <div class="message-text" v-html="formatMessage(message.content.trim(), message.role === 'assistant')"></div>
-            <div class="message-actions" v-if="message.role === 'assistant'">
-              <el-button type="text" size="small" @click="copyMessage(message.content)">
-                <el-icon><Document /></el-icon>复制
-              </el-button>
-            </div>
-          </div>
-        </div>
-        <div v-if="isThinking" class="message assistant thinking">
-          <div class="avatar">
-            <el-avatar :size="40">AI</el-avatar>
-          </div>
-          <div class="message-content">
-            <div class="thinking-indicator">
-              <el-icon><Loading /></el-icon>
-              <span>AI 正在思考...</span>
-            </div>
-            <div class="thinking-content" v-if="thinkingContent">
-              {{ thinkingContent }}
-            </div>
-          </div>
-        </div>
-        <div v-if="isLoading" class="message assistant">
-          <div class="avatar">
-            <el-avatar :size="40">AI</el-avatar>
-          </div>
-          <div class="message-content">
-            <div class="typing-indicator">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
+            <template v-if="message.role === 'assistant'">
+              <div v-if="message.content" class="message-text" v-html="formatMessage(message.content.trim(), true)"></div>
+              <div v-if="isThinking && message === currentMessages[currentMessages.length - 1]" class="thinking-bubble">
+                <div class="thinking-indicator">
+                  <el-icon><Loading /></el-icon>
+                  <span>AI 正在思考...</span>
+                </div>
+                <div v-if="thinkingContent" class="thinking-content">
+                  {{ thinkingContent }}
+                </div>
+              </div>
+              <div class="message-actions" v-if="message.content && !isStreaming">
+                <el-button type="text" size="small" @click="copyMessage(message.content)">
+                  <el-icon><Document /></el-icon>复制
+                </el-button>
+              </div>
+            </template>
+            <template v-else>
+              <div class="message-text" v-html="formatMessage(message.content.trim(), false)"></div>
+            </template>
           </div>
         </div>
       </div>
@@ -267,6 +255,18 @@ const sendMessage = async () => {
     messagesMap.value[currentChatId.value] = []
   }
   messagesMap.value[currentChatId.value].push(message)
+  
+  // 创建一个初始的AI响应消息
+  const aiResponse = {
+    id: Date.now().toString(),
+    role: 'assistant',
+    content: '',
+    timestamp: new Date().toISOString()
+  }
+  
+  // 添加到消息列表
+  messagesMap.value[currentChatId.value].push(aiResponse)
+  
   inputMessage.value = ''
   await nextTick()
   scrollToBottom()
@@ -274,19 +274,6 @@ const sendMessage = async () => {
   try {
     isLoading.value = true
     isStreaming.value = true
-    
-    // 创建一个初始的AI响应消息
-    const aiResponse = {
-      id: Date.now().toString(),
-      role: 'assistant',
-      content: '',
-      timestamp: new Date().toISOString()
-    }
-    
-    // 添加到消息列表
-    messagesMap.value[currentChatId.value].push(aiResponse)
-    await nextTick()
-    scrollToBottom()
 
     // 构建带有sessionId的URL
     const url = `http://localhost:7816/user/chat/model?sessionId=${encodeURIComponent(currentChat.sessionId)}&message=${encodeURIComponent(message.content)}`
@@ -359,7 +346,7 @@ const sendMessage = async () => {
         scrollToBottom()
       }
       
-      // 如果收到结束标签，清除思考状态
+      // 如果收到结束标签，清除思考状态和关闭连接
       if (event.data.includes('</think>')) {
         isThinking.value = false
         thinkingContent.value = ''
@@ -701,7 +688,7 @@ onMounted(() => {
   line-height: 1.5;
   font-size: 14px;
   word-wrap: break-word;
-  white-space: normal;
+  white-space: pre-wrap;
 }
 
 .message.assistant .message-text {
@@ -747,24 +734,28 @@ onMounted(() => {
   width: fit-content;
 }
 
+.thinking-bubble {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background-color: #f0f9ff;
+  border-radius: 8px;
+  border-left: 4px solid #409EFF;
+}
+
 .thinking-indicator {
   display: flex;
   align-items: center;
   gap: 8px;
   color: #409EFF;
-  margin-bottom: 4px;
   font-size: 13px;
 }
 
 .thinking-content {
-  padding: 8px 12px;
-  background-color: #F5F7FA;
-  border-radius: 6px;
-  font-size: 13px;
-  color: #606266;
-  line-height: 1.4;
+  margin-top: 4px;
+  color: #409EFF;
+  font-size: 14px;
+  line-height: 1.5;
   white-space: pre-line;
-  max-width: 100%;
 }
 
 /* 消息内容样式 */
