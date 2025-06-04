@@ -262,14 +262,18 @@ const sendMessage = async () => {
     return
   }
 
+  // 添加用户消息到列表
+  if (!messagesMap.value[currentChatId.value]) {
+    messagesMap.value[currentChatId.value] = []
+  }
   messagesMap.value[currentChatId.value].push(message)
   inputMessage.value = ''
+  await nextTick()
   scrollToBottom()
 
   try {
     isLoading.value = true
     isStreaming.value = true
-    actualResponse.value = ''
     
     // 创建一个初始的AI响应消息
     const aiResponse = {
@@ -281,7 +285,8 @@ const sendMessage = async () => {
     
     // 添加到消息列表
     messagesMap.value[currentChatId.value].push(aiResponse)
-    currentStreamingMessage.value = ''
+    await nextTick()
+    scrollToBottom()
 
     // 构建带有sessionId的URL
     const url = `http://localhost:7816/user/chat/model?sessionId=${encodeURIComponent(currentChat.sessionId)}&message=${encodeURIComponent(message.content)}`
@@ -289,8 +294,10 @@ const sendMessage = async () => {
     // 创建 EventSource 实例
     const eventSource = new EventSource(url)
 
+    let responseText = ''
+    
     // 处理消息
-    eventSource.onmessage = (event) => {
+    eventSource.onmessage = async (event) => {
       console.log('收到消息:', event.data)
       
       // 检查是否是思考内容
@@ -313,46 +320,43 @@ const sendMessage = async () => {
         }
 
         // 处理标点符号前的空格
-        const punctuationStart = /^[,.!?，。！？、]/.test(currentData)
-        if (punctuationStart && actualResponse.value) {
-          // 如果是标点符号开头，移除前面可能的空格
-          actualResponse.value = actualResponse.value.replace(/\s+$/, '')
+        if (/^[,.!?，。！？、]/.test(currentData) && responseText) {
+          responseText = responseText.replace(/\s+$/, '')
         }
 
         // 处理引号
         if (currentData === '"' || currentData === '"') {
-          actualResponse.value += currentData
-          return
-        }
+          responseText += currentData
+        } else {
+          // 添加适当的空格
+          if (responseText) {
+            const lastChar = responseText.slice(-1)
+            const currentFirstChar = currentData.charAt(0)
+            
+            // 判断是否需要添加空格
+            const needSpace = 
+              !/^[,.!?，。！？、]/.test(currentData) &&
+              lastChar !== '"' &&
+              lastChar.trim() && 
+              currentFirstChar.trim() &&
+              ((/[a-zA-Z0-9]/.test(lastChar) && /[a-zA-Z0-9\u4e00-\u9fa5]/.test(currentFirstChar)) ||
+               (/[\u4e00-\u9fa5]/.test(lastChar) && /[a-zA-Z0-9]/.test(currentFirstChar)))
 
-        // 添加适当的空格
-        if (actualResponse.value) {
-          const lastChar = actualResponse.value.slice(-1)
-          const currentFirstChar = currentData.charAt(0)
-          
-          // 判断是否需要添加空格
-          const needSpace = 
-            // 不是在标点符号之前
-            !punctuationStart &&
-            // 不是在引号之后
-            lastChar !== '"' &&
-            // 确保两个字符都不是空白字符
-            lastChar.trim() && currentFirstChar.trim() &&
-            // 如果两边都是英文字母或数字，或者一边是中文一边是英文，则需要空格
-            ((/[a-zA-Z0-9]/.test(lastChar) && /[a-zA-Z0-9\u4e00-\u9fa5]/.test(currentFirstChar)) ||
-             (/[\u4e00-\u9fa5]/.test(lastChar) && /[a-zA-Z0-9]/.test(currentFirstChar)))
-
-          if (needSpace) {
-            actualResponse.value += ' '
+            if (needSpace) {
+              responseText += ' '
+            }
           }
+          responseText += currentData
         }
 
-        actualResponse.value += currentData
-        currentStreamingMessage.value = actualResponse.value
-        aiResponse.content = actualResponse.value
-        nextTick(() => {
-          scrollToBottom()
-        })
+        // 更新消息内容
+        const lastMessage = messagesMap.value[currentChatId.value].at(-1)
+        if (lastMessage && lastMessage.role === 'assistant') {
+          lastMessage.content = responseText
+        }
+        
+        await nextTick()
+        scrollToBottom()
       }
       
       // 如果收到结束标签，清除思考状态
@@ -368,6 +372,12 @@ const sendMessage = async () => {
       eventSource.close()
       isStreaming.value = false
       isLoading.value = false
+      isThinking.value = false
+      
+      // 如果是新对话，更新标题
+      if (chatList.value[0].title === '新对话' && responseText) {
+        chatList.value[0].title = message.content.slice(0, 20) + (message.content.length > 20 ? '...' : '')
+      }
     }
 
     // 处理连接打开
@@ -375,25 +385,12 @@ const sendMessage = async () => {
       console.log('SSE 连接已建立')
     }
 
-    // 监听连接状态
-    const checkConnection = setInterval(() => {
-      if (eventSource.readyState === EventSource.CLOSED) {
-        clearInterval(checkConnection)
-        isStreaming.value = false
-        isLoading.value = false
-        
-        // 如果是新对话，更新标题
-        if (chatList.value[0].title === '新对话') {
-          chatList.value[0].title = message.content.slice(0, 20) + (message.content.length > 20 ? '...' : '')
-        }
-      }
-    }, 100)
-
   } catch (error) {
     console.error('发送消息失败:', error)
     ElMessage.error('发送消息失败')
     isLoading.value = false
     isStreaming.value = false
+    isThinking.value = false
   }
 }
 
