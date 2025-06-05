@@ -185,7 +185,6 @@ const markedInstance = new marked.Marked({
 const router = useRouter()
 const userStore = useUserStore()
 const messagesContainer = ref(null)
-const inputMessage = ref('')
 const isLoading = ref(false)
 const currentChatId = ref(null)
 const chatList = ref([])
@@ -196,6 +195,7 @@ const thinkingContent = ref('')
 
 // 添加 EventSource 实例的引用
 const currentEventSource = ref(null)
+const eventSourceMap = ref(new Map()) // 添加 eventSourceMap 用于存储每个会话的 EventSource
 
 // 添加输入框内容映射
 const inputMessagesMap = ref({})
@@ -207,11 +207,17 @@ const currentMessages = computed(() => {
 
 // 计算属性：当前会话的输入内容
 const currentInputMessage = computed({
-  get: () => inputMessagesMap.value[currentChatId.value] || '',
-  set: (value) => {
-    if (currentChatId.value) {
-      inputMessagesMap.value[currentChatId.value] = value
+  get: () => {
+    // 确保当前会话ID存在且有对应的输入内容
+    if (!currentChatId.value) return ''
+    if (!(currentChatId.value in inputMessagesMap.value)) {
+      inputMessagesMap.value[currentChatId.value] = ''
     }
+    return inputMessagesMap.value[currentChatId.value]
+  },
+  set: (value) => {
+    if (!currentChatId.value) return
+    inputMessagesMap.value[currentChatId.value] = value
   }
 })
 
@@ -231,6 +237,9 @@ const createNewChat = () => {
 
 // 切换对话
 const switchChat = (chatId) => {
+  if (!(chatId in inputMessagesMap.value)) {
+    inputMessagesMap.value[chatId] = ''
+  }
   currentChatId.value = chatId
   scrollToBottom()
 }
@@ -238,9 +247,17 @@ const switchChat = (chatId) => {
 // 删除对话
 const deleteChat = async (chatId) => {
   try {
+    // 关闭该对话的 EventSource
+    const eventSource = eventSourceMap.value.get(chatId)
+    if (eventSource) {
+      eventSource.close()
+      eventSourceMap.value.delete(chatId)
+    }
+    
     chatList.value = chatList.value.filter(chat => chat.id !== chatId)
     delete messagesMap.value[chatId]
-    delete inputMessagesMap.value[chatId] // 删除对应的输入内容
+    delete inputMessagesMap.value[chatId]
+    
     if (currentChatId.value === chatId) {
       currentChatId.value = chatList.value[0]?.id
     }
@@ -252,12 +269,6 @@ const deleteChat = async (chatId) => {
 // 发送消息
 const sendMessage = async () => {
   if (!currentInputMessage.value.trim() || isLoading.value) return
-
-  // 关闭之前的连接（如果有）
-  if (currentEventSource.value) {
-    currentEventSource.value.close()
-    currentEventSource.value = null
-  }
 
   const message = {
     id: Date.now().toString(),
@@ -300,89 +311,36 @@ const sendMessage = async () => {
 
     const url = `http://localhost:7816/user/chat/model?sessionId=${encodeURIComponent(currentChat.sessionId)}&message=${encodeURIComponent(message.content)}`
     
-    // 创建新的 EventSource 实例并保存引用
-    currentEventSource.value = new EventSource(url)
-    const eventSource = currentEventSource.value
+    // 创建新的 EventSource 实例
+    const eventSource = new EventSource(url)
+    const thisChatId = currentChatId.value
+    
+    // 将新的 EventSource 添加到 Map 中
+    eventSourceMap.value.set(thisChatId, eventSource)
+    currentEventSource.value = eventSource
 
-    let responseText = ''
+    // 为每个会话存储其响应文本
+    const responseTextMap = new Map()
     
     eventSource.onmessage = async (event) => {
-      // 检查连接是否已经被关闭或切换到其他对话
-      if (eventSource !== currentEventSource.value) {
-        eventSource.close()
-        return
-      }
-
-      console.log('收到消息:', event.data)
-      
-      // 检查是否是思考内容
-      if (event.data.includes('<think>')) {
-        isThinking.value = true
-        const thinkMatch = event.data.match(/<think>([\s\S]*?)<\/think>/)
-        if (thinkMatch) {
-          thinkingContent.value = thinkMatch[1].trim()
-        }
-        return
-      }
-      
-      // 如果不是思考内容，也不是结束标签，则添加到实际回复中
-      if (!event.data.includes('</think>')) {
-        const currentData = event.data.trim()
-        
-        if (!currentData) {
-          return
-        }
-
-        if (/^[,.!?，。！？、]/.test(currentData) && responseText) {
-          responseText = responseText.replace(/\s+$/, '')
-        }
-
-        if (currentData === '"' || currentData === '"') {
-          responseText += currentData
-        } else {
-          if (responseText) {
-            const lastChar = responseText.slice(-1)
-            const currentFirstChar = currentData.charAt(0)
-            
-            const needSpace = 
-              !/^[,.!?，。！？、]/.test(currentData) &&
-              lastChar !== '"' &&
-              lastChar.trim() && 
-              currentFirstChar.trim() &&
-              ((/[a-zA-Z0-9]/.test(lastChar) && /[a-zA-Z0-9\u4e00-\u9fa5]/.test(currentFirstChar)) ||
-               (/[\u4e00-\u9fa5]/.test(lastChar) && /[a-zA-Z0-9]/.test(currentFirstChar)))
-
-            if (needSpace) {
-              responseText += ' '
-            }
-          }
-          responseText += currentData
-        }
-
-        const lastMessage = messagesMap.value[currentChatId.value].at(-1)
-        if (lastMessage && lastMessage.role === 'assistant') {
-          lastMessage.content = responseText
-        }
-        
-        await nextTick()
-        scrollToBottom()
-      }
-      
-      // 如果收到结束标签，清除思考状态和关闭连接
-      if (event.data.includes('</think>')) {
-        isThinking.value = false
-        thinkingContent.value = ''
+      // 只检查会话ID是否匹配，不再检查 currentEventSource
+      if (thisChatId !== currentChatId.value) {
+        // 如果不是当前显示的会话，只更新内容，不滚动
+        handleEventMessage(event, thisChatId, responseTextMap, false)
+      } else {
+        // 如果是当前显示的会话，更新内容并滚动
+        handleEventMessage(event, thisChatId, responseTextMap, true)
       }
     }
 
     eventSource.onerror = (error) => {
       console.error('发生错误:', error)
       eventSource.close()
-      currentEventSource.value = null
+      eventSourceMap.value.delete(thisChatId)
       isStreaming.value = false
       isLoading.value = false
       
-      if (chatList.value[0].title === '新对话' && responseText) {
+      if (chatList.value[0].title === '新对话' && responseTextMap.get(thisChatId)) {
         chatList.value[0].title = message.content.slice(0, 20) + (message.content.length > 20 ? '...' : '')
       }
     }
@@ -392,10 +350,87 @@ const sendMessage = async () => {
     ElMessage.error('发送消息失败')
     isLoading.value = false
     isStreaming.value = false
-    if (currentEventSource.value) {
-      currentEventSource.value.close()
-      currentEventSource.value = null
+    const eventSource = eventSourceMap.value.get(currentChatId.value)
+    if (eventSource) {
+      eventSource.close()
+      eventSourceMap.value.delete(currentChatId.value)
     }
+  }
+}
+
+// 添加消息处理函数
+const handleEventMessage = (event, chatId, responseTextMap, shouldScroll = true) => {
+  // 确保该会话的响应文本已初始化
+  if (!responseTextMap.has(chatId)) {
+    responseTextMap.set(chatId, '')
+  }
+  
+  // 获取当前会话的响应文本
+  let responseText = responseTextMap.get(chatId)
+  
+  // 检查是否是思考内容
+  if (event.data.includes('<think>')) {
+    isThinking.value = true
+    const thinkMatch = event.data.match(/<think>([\s\S]*?)<\/think>/)
+    if (thinkMatch) {
+      thinkingContent.value = thinkMatch[1].trim()
+    }
+    return
+  }
+  
+  // 如果不是思考内容，也不是结束标签，则添加到实际回复中
+  if (!event.data.includes('</think>')) {
+    const currentData = event.data.trim()
+    
+    if (!currentData) {
+      return
+    }
+
+    if (/^[,.!?，。！？、]/.test(currentData) && responseText) {
+      responseText = responseText.replace(/\s+$/, '')
+    }
+
+    if (currentData === '"' || currentData === '"') {
+      responseText += currentData
+    } else {
+      if (responseText) {
+        const lastChar = responseText.slice(-1)
+        const currentFirstChar = currentData.charAt(0)
+        
+        const needSpace = 
+          !/^[,.!?，。！？、]/.test(currentData) &&
+          lastChar !== '"' &&
+          lastChar.trim() && 
+          currentFirstChar.trim() &&
+          ((/[a-zA-Z0-9]/.test(lastChar) && /[a-zA-Z0-9\u4e00-\u9fa5]/.test(currentFirstChar)) ||
+           (/[\u4e00-\u9fa5]/.test(lastChar) && /[a-zA-Z0-9]/.test(currentFirstChar)))
+
+        if (needSpace) {
+          responseText += ' '
+        }
+      }
+      responseText += currentData
+    }
+
+    // 更新响应文本Map
+    responseTextMap.set(chatId, responseText)
+
+    const lastMessage = messagesMap.value[chatId].at(-1)
+    if (lastMessage && lastMessage.role === 'assistant') {
+      lastMessage.content = responseText
+    }
+    
+    if (shouldScroll) {
+      nextTick(() => {
+        scrollToBottom()
+      })
+    }
+  }
+  
+  // 如果收到结束标签，清除思考状态
+  if (event.data.includes('</think>')) {
+    isThinking.value = false
+    thinkingContent.value = ''
   }
 }
 
@@ -581,10 +616,11 @@ onMounted(() => {
 
 // 组件卸载时清理
 onUnmounted(() => {
-  if (currentEventSource.value) {
-    currentEventSource.value.close()
-    currentEventSource.value = null
-  }
+  // 清理所有的 EventSource 连接
+  eventSourceMap.value.forEach(eventSource => {
+    eventSource.close()
+  })
+  eventSourceMap.value.clear()
 })
 
 const handleEnterPress = (e) => {
