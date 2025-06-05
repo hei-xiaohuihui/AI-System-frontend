@@ -62,7 +62,7 @@
                   {{ thinkingContent }}
                 </div>
               </div>
-              <div class="message-actions" v-if="message.content && !isStreaming">
+              <div class="message-actions" v-if="message.content && !isCurrentChatStreaming">
                 <el-button type="text" size="small" @click="copyMessage(message.content)">
                   <el-icon><Document /></el-icon>复制
                 </el-button>
@@ -189,7 +189,7 @@ const isLoading = ref(false)
 const currentChatId = ref(null)
 const chatList = ref([])
 const messagesMap = ref({})
-const isStreaming = ref(false)
+const streamingStateMap = ref(new Map())
 const thinkingStateMap = ref(new Map())
 
 // 添加 EventSource 实例的引用
@@ -229,6 +229,18 @@ const currentThinkingState = computed(() => {
 // 更新模板中的引用
 const isThinking = computed(() => currentThinkingState.value.isThinking)
 const thinkingContent = computed(() => currentThinkingState.value.content)
+
+// 添加计算属性来判断当前对话是否正在流式传输
+const isCurrentChatStreaming = computed(() => {
+  return streamingStateMap.value.get(currentChatId.value) || false
+})
+
+// 修改 token 的获取方式
+const token = computed(() => {
+  const userInfo = userStore.getUserInfo
+  console.log('Current userInfo:', userInfo) // 调试日志
+  return userInfo?.token || localStorage.getItem('token') // 尝试从 localStorage 获取
+})
 
 // 创建新对话
 const createNewChat = () => {
@@ -282,6 +294,15 @@ const deleteChat = async (chatId) => {
 const sendMessage = async () => {
   if (!currentInputMessage.value.trim() || isLoading.value) return
 
+  // 添加更详细的 token 检查
+  console.log('Current token:', token.value) // 调试日志
+  if (!token.value) {
+    console.log('UserStore state:', userStore.$state) // 调试日志
+    ElMessage.error('未检测到登录状态，请重新登录')
+    router.push('/login')
+    return
+  }
+
   const message = {
     id: Date.now().toString(),
     role: 'user',
@@ -299,10 +320,13 @@ const sendMessage = async () => {
     return
   }
 
-  if (!messagesMap.value[currentChatId.value]) {
-    messagesMap.value[currentChatId.value] = []
+  // 存储发送消息时的会话ID，用于确保响应显示在正确的会话中
+  const sendingChatId = currentChatId.value
+
+  if (!messagesMap.value[sendingChatId]) {
+    messagesMap.value[sendingChatId] = []
   }
-  messagesMap.value[currentChatId.value].push(message)
+  messagesMap.value[sendingChatId].push(message)
   
   const aiResponse = {
     id: Date.now().toString(),
@@ -311,63 +335,136 @@ const sendMessage = async () => {
     timestamp: new Date().toISOString()
   }
   
-  messagesMap.value[currentChatId.value].push(aiResponse)
+  messagesMap.value[sendingChatId].push(aiResponse)
   
   currentInputMessage.value = ''
   await nextTick()
   scrollToBottom()
 
-  try {
-    isLoading.value = true
-    isStreaming.value = true
+  let retryCount = 0
+  const maxRetries = 3
+  const retryDelay = 1000 // 1秒
 
-    const url = `http://localhost:7816/user/chat/model?sessionId=${encodeURIComponent(currentChat.sessionId)}&message=${encodeURIComponent(message.content)}`
-    
-    // 创建新的 EventSource 实例
-    const eventSource = new EventSource(url)
-    const thisChatId = currentChatId.value
-    
-    // 将新的 EventSource 添加到 Map 中
-    eventSourceMap.value.set(thisChatId, eventSource)
-    currentEventSource.value = eventSource
+  const attemptRequest = async () => {
+    try {
+      isLoading.value = true
+      // 设置当前对话的流式状态
+      streamingStateMap.value.set(sendingChatId, true)
 
-    // 为每个会话存储其响应文本
-    const responseTextMap = new Map()
-    
-    eventSource.onmessage = async (event) => {
-      // 只检查会话ID是否匹配，不再检查 currentEventSource
-      if (thisChatId !== currentChatId.value) {
-        // 如果不是当前显示的会话，只更新内容，不滚动
-        handleEventMessage(event, thisChatId, responseTextMap, false)
-      } else {
-        // 如果是当前显示的会话，更新内容并滚动
-        handleEventMessage(event, thisChatId, responseTextMap, true)
-      }
-    }
+      // 构建URL
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7816'
+      const url = `${baseUrl}/user/chat/model`
 
-    eventSource.onerror = (error) => {
-      console.error('发生错误:', error)
-      eventSource.close()
-      eventSourceMap.value.delete(thisChatId)
-      isStreaming.value = false
+      let accumulatedData = ''
+      let lastErrorTime = 0
+      let errorCount = 0
+      const maxErrorsPerMinute = 5
+
+      const response = await axios.get(url, {
+        params: {
+          sessionId: currentChat.sessionId,
+          message: message.content
+        },
+        headers: {
+          'Authorization': `Bearer ${token.value}`,
+          'Accept': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+        },
+        responseType: 'stream',
+        timeout: 60000, // 60秒超时
+        onDownloadProgress: (progressEvent) => {
+          try {
+            const data = progressEvent.event.target.response
+            if (data) {
+              const newData = data.substring(accumulatedData.length)
+              accumulatedData = data
+
+              const lines = newData.split('\n')
+              lines.forEach(line => {
+                if (line.startsWith('data:')) {
+                  const eventData = line.slice(5)
+                  if (eventData.trim()) {
+                    // 使用发送时的会话ID来更新消息
+                    const lastMessage = messagesMap.value[sendingChatId]?.at(-1)
+                    if (lastMessage && lastMessage.role === 'assistant') {
+                      if (!lastMessage.content) {
+                        lastMessage.content = eventData
+                      } else {
+                        lastMessage.content += eventData
+                      }
+                      // 只有当前显示的是发送消息的会话时才滚动
+                      if (currentChatId.value === sendingChatId) {
+                        nextTick(() => {
+                          scrollToBottom()
+                        })
+                      }
+                    }
+                  }
+                }
+              })
+            }
+          } catch (error) {
+            const now = Date.now()
+            if (now - lastErrorTime > 60000) { // 重置每分钟错误计数
+              errorCount = 0
+              lastErrorTime = now
+            }
+            
+            errorCount++
+            console.warn('Stream processing error:', error)
+            
+            if (errorCount > maxErrorsPerMinute) {
+              throw new Error('Too many errors in stream processing')
+            }
+          }
+        }
+      })
+
+      // 请求完成后的处理
+      streamingStateMap.value.delete(sendingChatId) // 清除流式状态
       isLoading.value = false
       
-      if (chatList.value[0].title === '新对话' && responseTextMap.get(thisChatId)) {
+      if (chatList.value[0]?.id === sendingChatId && chatList.value[0]?.title === '新对话') {
         chatList.value[0].title = message.content.slice(0, 20) + (message.content.length > 20 ? '...' : '')
       }
-    }
 
-  } catch (error) {
-    console.error('发送消息失败:', error)
-    ElMessage.error('发送消息失败')
-    isLoading.value = false
-    isStreaming.value = false
-    const eventSource = eventSourceMap.value.get(currentChatId.value)
-    if (eventSource) {
-      eventSource.close()
-      eventSourceMap.value.delete(currentChatId.value)
+      return true // 成功标志
+    } catch (error) {
+      console.error('发送消息失败:', error)
+      
+      // 如果是网络错误或超时，尝试重试
+      if (
+        (error.code === 'ECONNABORTED' || 
+         error.message.includes('Network Error') ||
+         error.message.includes('timeout')) &&
+        retryCount < maxRetries
+      ) {
+        retryCount++
+        await new Promise(resolve => setTimeout(resolve, retryDelay * retryCount))
+        return attemptRequest() // 递归重试
+      }
+
+      // 如果重试次数用完或是其他类型的错误
+      if (retryCount >= maxRetries) {
+        ElMessage.error('多次重试后仍然失败，请检查网络连接')
+      } else {
+        ElMessage.error(error.response?.data?.message || '发送消息失败')
+      }
+
+      // 保留已经接收到的内容
+      const lastMessage = messagesMap.value[sendingChatId]?.at(-1)
+      if (lastMessage && lastMessage.role === 'assistant' && !lastMessage.content) {
+        lastMessage.content = '抱歉，消息发送过程中出现错误。已接收的内容如下：\n' + accumulatedData
+      }
+
+      streamingStateMap.value.delete(sendingChatId) // 清除流式状态
+      isLoading.value = false
+      return false // 失败标志
     }
   }
+
+  return attemptRequest()
 }
 
 // 添加消息处理函数
@@ -642,7 +739,8 @@ onUnmounted(() => {
   })
   eventSourceMap.value.clear()
   
-  // 清理所有思考状态
+  // 清理所有状态
+  streamingStateMap.value.clear()
   thinkingStateMap.value.clear()
 })
 
@@ -661,6 +759,20 @@ const handleEnterPress = (e) => {
 
 const handleShiftEnterPress = () => {
   sendMessage();
+}
+
+// 在 script setup 的顶部添加 EventSourceWithAuth 类
+// 自定义 EventSource 类来支持认证头
+class EventSourceWithAuth extends EventSource {
+  constructor(url, options = {}) {
+    const { headers = {}, ...eventSourceInit } = options;
+    
+    // 创建一个唯一的 URL，包含认证信息
+    const fullUrl = new URL(url);
+    fullUrl.searchParams.append('_auth', headers.Authorization || '');
+    
+    super(fullUrl, eventSourceInit);
+  }
 }
 </script>
 
