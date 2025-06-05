@@ -190,8 +190,7 @@ const currentChatId = ref(null)
 const chatList = ref([])
 const messagesMap = ref({})
 const isStreaming = ref(false)
-const isThinking = ref(false)
-const thinkingContent = ref('')
+const thinkingStateMap = ref(new Map())
 
 // 添加 EventSource 实例的引用
 const currentEventSource = ref(null)
@@ -220,6 +219,16 @@ const currentInputMessage = computed({
     inputMessagesMap.value[currentChatId.value] = value
   }
 })
+
+// 计算当前会话的思考状态
+const currentThinkingState = computed(() => {
+  if (!currentChatId.value) return { isThinking: false, content: '' }
+  return thinkingStateMap.value.get(currentChatId.value) || { isThinking: false, content: '' }
+})
+
+// 更新模板中的引用
+const isThinking = computed(() => currentThinkingState.value.isThinking)
+const thinkingContent = computed(() => currentThinkingState.value.content)
 
 // 创建新对话
 const createNewChat = () => {
@@ -253,6 +262,9 @@ const deleteChat = async (chatId) => {
       eventSource.close()
       eventSourceMap.value.delete(chatId)
     }
+    
+    // 清理思考状态
+    thinkingStateMap.value.delete(chatId)
     
     chatList.value = chatList.value.filter(chat => chat.id !== chatId)
     delete messagesMap.value[chatId]
@@ -365,16 +377,23 @@ const handleEventMessage = (event, chatId, responseTextMap, shouldScroll = true)
     responseTextMap.set(chatId, '')
   }
   
-  // 获取当前会话的响应文本
+  // 确保该会话的思考状态已初始化
+  if (!thinkingStateMap.value.has(chatId)) {
+    thinkingStateMap.value.set(chatId, { isThinking: false, content: '' })
+  }
+  
+  // 获取当前会话的响应文本和思考状态
   let responseText = responseTextMap.get(chatId)
+  let thinkingState = thinkingStateMap.value.get(chatId)
   
   // 检查是否是思考内容
   if (event.data.includes('<think>')) {
-    isThinking.value = true
+    thinkingState.isThinking = true
     const thinkMatch = event.data.match(/<think>([\s\S]*?)<\/think>/)
     if (thinkMatch) {
-      thinkingContent.value = thinkMatch[1].trim()
+      thinkingState.content = thinkMatch[1].trim()
     }
+    thinkingStateMap.value.set(chatId, thinkingState)
     return
   }
   
@@ -429,8 +448,9 @@ const handleEventMessage = (event, chatId, responseTextMap, shouldScroll = true)
   
   // 如果收到结束标签，清除思考状态
   if (event.data.includes('</think>')) {
-    isThinking.value = false
-    thinkingContent.value = ''
+    thinkingState.isThinking = false
+    thinkingState.content = ''
+    thinkingStateMap.value.set(chatId, thinkingState)
   }
 }
 
@@ -621,6 +641,9 @@ onUnmounted(() => {
     eventSource.close()
   })
   eventSourceMap.value.clear()
+  
+  // 清理所有思考状态
+  thinkingStateMap.value.clear()
 })
 
 const handleEnterPress = (e) => {
