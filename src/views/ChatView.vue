@@ -40,39 +40,45 @@
     <!-- 主聊天区域 -->
     <div class="main-content">
       <div class="chat-messages" ref="messagesContainer">
-        <div v-for="message in currentMessages" :key="message.id" :class="['message', message.role]">
-          <div class="avatar">
-            <el-avatar :size="40">
-              {{ message.role === 'user' ? userStore.getUserInfo.username?.charAt(0).toUpperCase() : 'AI' }}
-            </el-avatar>
-          </div>
-          <div class="message-content">
-            <template v-if="message.role === 'assistant'">
-              <div v-if="message.content" 
-                   class="message-text" 
-                   :class="{ 'has-thinking': hasThinkingContent(message.content) }" 
-                   v-html="formatMessage(message.content, true)">
-              </div>
-              <div v-if="isThinking && message === currentMessages[currentMessages.length - 1]" class="thinking-bubble">
-                <div class="thinking-indicator">
-                  <el-icon><Loading /></el-icon>
-                  <span>AI 正在思考...</span>
-                </div>
-                <div v-if="thinkingContent" class="thinking-content">
-                  {{ thinkingContent }}
-                </div>
-              </div>
-              <div class="message-actions" v-if="message.content && !isCurrentChatStreaming">
-                <el-button type="text" size="small" @click="copyMessage(message.content)">
-                  <el-icon><Document /></el-icon>复制
-                </el-button>
-              </div>
-            </template>
-            <template v-else>
-              <div class="message-text" v-html="formatMessage(message.content, false)"></div>
-            </template>
-          </div>
+        <div v-if="loadingHistory" class="loading-container">
+          <el-icon class="loading-icon"><Loading /></el-icon>
+          <span>加载聊天记录中...</span>
         </div>
+        <template v-else>
+          <div v-for="message in currentMessages" :key="message.id" :class="['message', message.role]">
+            <div class="avatar">
+              <el-avatar :size="40">
+                {{ message.role === 'user' ? userStore.getUserInfo.username?.charAt(0).toUpperCase() : 'AI' }}
+              </el-avatar>
+            </div>
+            <div class="message-content">
+              <template v-if="message.role === 'assistant'">
+                <div v-if="message.content" 
+                     class="message-text" 
+                     :class="{ 'has-thinking': hasThinkingContent(message.content) }" 
+                     v-html="formatMessage(message.content, true)">
+                </div>
+                <div v-if="isThinking && message === currentMessages[currentMessages.length - 1]" class="thinking-bubble">
+                  <div class="thinking-indicator">
+                    <el-icon><Loading /></el-icon>
+                    <span>AI 正在思考...</span>
+                  </div>
+                  <div v-if="thinkingContent" class="thinking-content">
+                    {{ thinkingContent }}
+                  </div>
+                </div>
+                <div class="message-actions" v-if="message.content && !isCurrentChatStreaming">
+                  <el-button type="text" size="small" @click="copyMessage(message.content)">
+                    <el-icon><Document /></el-icon>复制
+                  </el-button>
+                </div>
+              </template>
+              <template v-else>
+                <div class="message-text" v-html="formatMessage(message.content, false)"></div>
+              </template>
+            </div>
+          </div>
+        </template>
       </div>
 
       <div class="chat-input">
@@ -256,10 +262,17 @@ const createNewChat = () => {
 }
 
 // 切换对话
-const switchChat = (chatId) => {
+const switchChat = async (chatId) => {
   if (!(chatId in inputMessagesMap.value)) {
     inputMessagesMap.value[chatId] = ''
   }
+  
+  const targetChat = chatList.value.find(chat => chat.id === chatId)
+  if (targetChat && !messagesMap.value[chatId]) {
+    // 如果这个会话的消息还没有加载，加载它的历史记录
+    await loadChatHistory(chatId, targetChat.sessionId)
+  }
+  
   currentChatId.value = chatId
   scrollToBottom()
 }
@@ -267,6 +280,23 @@ const switchChat = (chatId) => {
 // 删除对话
 const deleteChat = async (chatId) => {
   try {
+    const chat = chatList.value.find(c => c.id === chatId)
+    if (!chat) {
+      ElMessage.error('对话不存在')
+      return
+    }
+
+    // 确认删除
+    await ElMessageBox.confirm(
+      '确定要删除这个对话吗？删除后无法恢复。',
+      '删除确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
     // 关闭该对话的 EventSource
     const eventSource = eventSourceMap.value.get(chatId)
     if (eventSource) {
@@ -274,18 +304,38 @@ const deleteChat = async (chatId) => {
       eventSourceMap.value.delete(chatId)
     }
     
+    // 调用后端删除接口
+    await axios.delete('/user/chat/delete', {
+      params: { sessionId: chat.sessionId }
+    })
+    
     // 清理思考状态
     thinkingStateMap.value.delete(chatId)
+    streamingStateMap.value.delete(chatId)
     
-    chatList.value = chatList.value.filter(chat => chat.id !== chatId)
+    // 清理前端数据
+    chatList.value = chatList.value.filter(c => c.id !== chatId)
     delete messagesMap.value[chatId]
     delete inputMessagesMap.value[chatId]
     
+    // 如果删除的是当前对话，切换到其他对话
     if (currentChatId.value === chatId) {
-      currentChatId.value = chatList.value[0]?.id
+      if (chatList.value.length > 0) {
+        // 切换到第一个可用的对话
+        currentChatId.value = chatList.value[0].id
+      } else {
+        // 如果没有其他对话了，创建新对话
+        createNewChat()
+      }
     }
+
+    ElMessage.success('对话删除成功')
   } catch (error) {
-    ElMessage.error('删除对话失败')
+    if (error === 'cancel') {
+      return
+    }
+    console.error('删除对话失败:', error)
+    ElMessage.error(error.response?.data?.message || '删除对话失败')
   }
 }
 
@@ -748,6 +798,81 @@ const hasThinkingContent = (content) => {
   return content && content.includes('<think>');
 }
 
+// 在 script setup 的顶部添加新的函数和状态
+const loadingHistory = ref(false)
+
+// 加载历史会话列表
+const loadSessionList = async () => {
+  try {
+    const response = await axios.get('/user/chat/sessionIds')
+    if (response.data.code === 200) {
+      const sessionIds = response.data.data
+      // 为每个会话ID创建一个聊天对象
+      const chats = sessionIds.map(sessionId => ({
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9), // 生成唯一ID
+        sessionId: sessionId,
+        title: '加载中...', // 稍后会更新
+        createdAt: new Date().toISOString()
+      }))
+      chatList.value = chats
+      
+      // 如果有会话，加载第一个会话的历史记录
+      if (chats.length > 0) {
+        await loadChatHistory(chats[0].id, chats[0].sessionId)
+        currentChatId.value = chats[0].id
+      } else {
+        // 如果没有历史会话，创建新的会话
+        createNewChat()
+      }
+    }
+  } catch (error) {
+    console.error('加载会话列表失败:', error)
+    ElMessage.error('加载会话列表失败')
+    // 如果加载失败，创建新的会话
+    createNewChat()
+  }
+}
+
+// 加载特定会话的历史记录
+const loadChatHistory = async (chatId, sessionId) => {
+  try {
+    loadingHistory.value = true
+    const response = await axios.get('/user/chat/history', {
+      params: { sessionId }
+    })
+    
+    if (response.data.code === 200) {
+      const historyMessages = response.data.data.map(msg => ({
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        role: msg.sender,
+        content: msg.message,
+        timestamp: new Date().toISOString()
+      }))
+      
+      // 更新消息列表
+      messagesMap.value[chatId] = historyMessages
+      
+      // 如果有消息，用第一条用户消息作为会话标题
+      const firstUserMessage = historyMessages.find(msg => msg.role === 'user')
+      if (firstUserMessage) {
+        const chat = chatList.value.find(c => c.id === chatId)
+        if (chat) {
+          chat.title = firstUserMessage.content.slice(0, 20) + (firstUserMessage.content.length > 20 ? '...' : '')
+        }
+      }
+      
+      // 滚动到底部
+      await nextTick()
+      scrollToBottom()
+    }
+  } catch (error) {
+    console.error('加载聊天历史失败:', error)
+    ElMessage.error('加载聊天历史失败')
+  } finally {
+    loadingHistory.value = false
+  }
+}
+
 // 初始化
 onMounted(async () => {
   // 检查认证状态
@@ -755,7 +880,8 @@ onMounted(async () => {
     await router.push('/login')
     return
   }
-  createNewChat()
+  // 加载历史会话列表
+  await loadSessionList()
 })
 
 // 组件卸载时清理
@@ -1391,5 +1517,29 @@ class EventSourceWithAuth extends EventSource {
 .message-text :deep(.thinking-content p:last-child),
 .message-text :deep(.final-response p:last-child) {
   margin-bottom: 0;
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: #909399;
+}
+
+.loading-icon {
+  font-size: 24px;
+  margin-bottom: 8px;
+  animation: rotate 1s linear infinite;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style> 
