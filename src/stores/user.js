@@ -26,9 +26,21 @@ axios.interceptors.response.use(
     if (error.response) {
       switch (error.response.status) {
         case 401: // token 过期或无效
+          // 避免重复处理，如果已经在处理中则直接返回
+          if (error.config._isRetry) {
+            return Promise.reject(error)
+          }
+          error.config._isRetry = true
+
           // 清除本地存储的 token
           localStorage.removeItem('token')
           localStorage.removeItem('userInfo')
+          // 清除 store 中的数据
+          const userStore = useUserStore()
+          userStore.$patch({
+            token: '',
+            userInfo: {}
+          })
           // 跳转到登录页
           router.push('/login')
           ElMessage.error('登录已过期，请重新登录')
@@ -37,8 +49,19 @@ axios.interceptors.response.use(
           ElMessage.error('没有权限访问')
           break
         default:
-          ElMessage.error(error.response.data.message || '请求失败')
+          if (!error.config._isHandled) {
+            error.config._isHandled = true
+            ElMessage.error(error.response.data?.message || '请求失败')
+          }
       }
+    } else if (error.request && !error.config._isHandled) {
+      error.config._isHandled = true
+      // 请求已发出但没有收到响应
+      ElMessage.error('网络错误，请检查网络连接')
+    } else if (!error.config._isHandled) {
+      error.config._isHandled = true
+      // 请求配置出错
+      ElMessage.error('请求配置错误')
     }
     return Promise.reject(error)
   }
@@ -89,6 +112,9 @@ export const useUserStore = defineStore('user', {
         
         localStorage.setItem('token', token)
         localStorage.setItem('userInfo', JSON.stringify(userInfo))
+        
+        // 设置 axios 默认 Authorization header
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
         
         ElMessage.success('登录成功')
         return true

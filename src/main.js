@@ -28,14 +28,11 @@ axios.interceptors.request.use(config => {
   return config
 })
 
+// 移除可能冲突的响应拦截器，只保留调试日志
 axios.interceptors.response.use(
   response => {
     console.log('Received response:', response.config.url, response)
     return response
-  },
-  error => {
-    console.error('Request error:', error)
-    return Promise.reject(error)
   }
 )
 

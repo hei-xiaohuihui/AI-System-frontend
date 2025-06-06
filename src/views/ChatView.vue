@@ -237,9 +237,8 @@ const isCurrentChatStreaming = computed(() => {
 
 // 修改 token 的获取方式
 const token = computed(() => {
-  const userInfo = userStore.getUserInfo
-  console.log('Current userInfo:', userInfo) // 调试日志
-  return userInfo?.token || localStorage.getItem('token') // 尝试从 localStorage 获取
+  // 直接从 userStore 获取 token
+  return userStore.token || ''
 })
 
 // 创建新对话
@@ -295,11 +294,9 @@ const sendMessage = async () => {
   if (!currentInputMessage.value.trim() || isLoading.value) return
 
   // 添加更详细的 token 检查
-  console.log('Current token:', token.value) // 调试日志
-  if (!token.value) {
-    console.log('UserStore state:', userStore.$state) // 调试日志
+  if (!userStore.isAuthenticated) {
     ElMessage.error('未检测到登录状态，请重新登录')
-    router.push('/login')
+    await router.push('/login')
     return
   }
 
@@ -360,6 +357,22 @@ const sendMessage = async () => {
       let errorCount = 0
       const maxErrorsPerMinute = 5
 
+      // 首先验证 token 是否有效
+      try {
+        const checkResponse = await axios.get('/user/auth/checkToken')
+        if (checkResponse.data.code !== 200) {
+          throw new Error('Token validation failed')
+        }
+      } catch (error) {
+        // Token 验证失败，清理状态并跳转到登录页
+        if (!error.config?._isRetry) {
+          userStore.logout()
+        }
+        streamingStateMap.value.delete(sendingChatId)
+        isLoading.value = false
+        return false
+      }
+
       const response = await axios.get(url, {
         params: {
           sessionId: currentChat.sessionId,
@@ -373,6 +386,10 @@ const sendMessage = async () => {
         },
         responseType: 'stream',
         timeout: 60000, // 60秒超时
+        validateStatus: function (status) {
+          // 添加状态码验证，401 状态码将被视为错误
+          return status === 200
+        },
         onDownloadProgress: (progressEvent) => {
           try {
             const data = progressEvent.event.target.response
@@ -433,6 +450,14 @@ const sendMessage = async () => {
     } catch (error) {
       console.error('发送消息失败:', error)
       
+      // 特殊处理 401 错误
+      if (error.response?.status === 401 && !error.config?._isRetry) {
+        userStore.logout()
+        streamingStateMap.value.delete(sendingChatId)
+        isLoading.value = false
+        return false
+      }
+      
       // 如果是网络错误或超时，尝试重试
       if (
         (error.code === 'ECONNABORTED' || 
@@ -449,7 +474,8 @@ const sendMessage = async () => {
       if (retryCount >= maxRetries) {
         ElMessage.error('多次重试后仍然失败，请检查网络连接')
       } else {
-        ElMessage.error(error.response?.data?.message || '发送消息失败')
+        const errorMessage = error.response?.data?.message || '发送消息失败'
+        ElMessage.error(errorMessage)
       }
 
       // 保留已经接收到的内容
@@ -723,9 +749,10 @@ const hasThinkingContent = (content) => {
 }
 
 // 初始化
-onMounted(() => {
+onMounted(async () => {
+  // 检查认证状态
   if (!userStore.isAuthenticated) {
-    router.push('/login')
+    await router.push('/login')
     return
   }
   createNewChat()
