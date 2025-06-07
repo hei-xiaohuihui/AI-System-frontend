@@ -52,7 +52,7 @@ axios.interceptors.response.use(
           if (!error.config._isHandled) {
             error.config._isHandled = true
             ElMessage.error(error.response.data?.message || '请求失败')
-          }
+      }
       }
     } else if (error.request && !error.config._isHandled) {
       error.config._isHandled = true

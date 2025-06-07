@@ -45,39 +45,39 @@
           <span>加载聊天记录中...</span>
         </div>
         <template v-else>
-          <div v-for="message in currentMessages" :key="message.id" :class="['message', message.role]">
-            <div class="avatar">
-              <el-avatar :size="40">
-                {{ message.role === 'user' ? userStore.getUserInfo.username?.charAt(0).toUpperCase() : 'AI' }}
-              </el-avatar>
-            </div>
-            <div class="message-content">
-              <template v-if="message.role === 'assistant'">
-                <div v-if="message.content" 
-                     class="message-text" 
-                     :class="{ 'has-thinking': hasThinkingContent(message.content) }" 
-                     v-html="formatMessage(message.content, true)">
-                </div>
-                <div v-if="isThinking && message === currentMessages[currentMessages.length - 1]" class="thinking-bubble">
-                  <div class="thinking-indicator">
-                    <el-icon><Loading /></el-icon>
-                    <span>AI 正在思考...</span>
-                  </div>
-                  <div v-if="thinkingContent" class="thinking-content">
-                    {{ thinkingContent }}
-                  </div>
-                </div>
-                <div class="message-actions" v-if="message.content && !isCurrentChatStreaming">
-                  <el-button type="text" size="small" @click="copyMessage(message.content)">
-                    <el-icon><Document /></el-icon>复制
-                  </el-button>
-                </div>
-              </template>
-              <template v-else>
-                <div class="message-text" v-html="formatMessage(message.content, false)"></div>
-              </template>
-            </div>
+        <div v-for="message in currentMessages" :key="message.id" :class="['message', message.role]">
+          <div class="avatar">
+            <el-avatar :size="40">
+              {{ message.role === 'user' ? userStore.getUserInfo.username?.charAt(0).toUpperCase() : 'AI' }}
+            </el-avatar>
           </div>
+          <div class="message-content">
+            <template v-if="message.role === 'assistant'">
+              <div v-if="message.content" 
+                   class="message-text" 
+                   :class="{ 'has-thinking': hasThinkingContent(message.content) }" 
+                   v-html="formatMessage(message.content, true)">
+              </div>
+              <div v-if="isThinking && message === currentMessages[currentMessages.length - 1]" class="thinking-bubble">
+                <div class="thinking-indicator">
+                  <el-icon><Loading /></el-icon>
+                  <span>AI 正在思考...</span>
+                </div>
+                <div v-if="thinkingContent" class="thinking-content">
+                  {{ thinkingContent }}
+                </div>
+              </div>
+                <div class="message-actions" v-if="message.content && !isCurrentChatStreaming">
+                <el-button type="text" size="small" @click="copyMessage(message.content)">
+                  <el-icon><Document /></el-icon>复制
+                </el-button>
+              </div>
+            </template>
+            <template v-else>
+              <div class="message-text" v-html="formatMessage(message.content, false)"></div>
+            </template>
+          </div>
+        </div>
         </template>
       </div>
 
@@ -90,6 +90,8 @@
           @keydown.enter.exact.prevent="handleEnterPress"
           @keydown.enter.shift.exact="handleShiftEnterPress"
           :disabled="isLoading"
+          ref="inputRef"
+          @blur="handleInputBlur"
         />
         <el-button type="primary" @click="sendMessage" :loading="isLoading" :disabled="!currentInputMessage.trim()">
           发送
@@ -164,7 +166,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, h, onUnmounted } from 'vue'
+import { ref, computed, onMounted, nextTick, h, onUnmounted, watch, onActivated, onDeactivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
 import { Plus, ChatRound, Delete, Document, Loading } from '@element-plus/icons-vue'
@@ -249,6 +251,8 @@ const token = computed(() => {
 
 // 创建新对话
 const createNewChat = () => {
+  shouldFocus.value = true
+  
   const newChat = {
     id: Date.now().toString(),
     title: '新对话',
@@ -257,24 +261,28 @@ const createNewChat = () => {
   }
   chatList.value.unshift(newChat)
   messagesMap.value[newChat.id] = []
-  inputMessagesMap.value[newChat.id] = '' // 初始化新会话的输入内容
+  inputMessagesMap.value[newChat.id] = ''
   currentChatId.value = newChat.id
+  focusInput()
 }
 
 // 切换对话
 const switchChat = async (chatId) => {
+  shouldFocus.value = true
+  
   if (!(chatId in inputMessagesMap.value)) {
     inputMessagesMap.value[chatId] = ''
   }
   
   const targetChat = chatList.value.find(chat => chat.id === chatId)
   if (targetChat && !messagesMap.value[chatId]) {
-    // 如果这个会话的消息还没有加载，加载它的历史记录
     await loadChatHistory(chatId, targetChat.sessionId)
   }
   
   currentChatId.value = chatId
+  await nextTick()
   scrollToBottom()
+  focusInput()
 }
 
 // 删除对话
@@ -343,12 +351,12 @@ const deleteChat = async (chatId) => {
 const sendMessage = async () => {
   if (!currentInputMessage.value.trim() || isLoading.value) return
 
-  // 添加更详细的 token 检查
-  if (!userStore.isAuthenticated) {
-    ElMessage.error('未检测到登录状态，请重新登录')
-    await router.push('/login')
-    return
-  }
+  shouldFocus.value = true
+  let accumulatedData = ''
+  let lastErrorTime = 0
+  let errorCount = 0
+  const maxErrorsPerMinute = 5
+  let responseComplete = false
 
   const message = {
     id: Date.now().toString(),
@@ -388,6 +396,17 @@ const sendMessage = async () => {
   await nextTick()
   scrollToBottom()
 
+  // 创建一个防抖的滚动函数，用于处理流式响应
+  let scrollTimeout
+  const debouncedScroll = () => {
+    clearTimeout(scrollTimeout)
+    scrollTimeout = setTimeout(() => {
+      if (currentChatId.value === sendingChatId) {
+        scrollToBottom()
+      }
+    }, 100)
+  }
+
   let retryCount = 0
   const maxRetries = 3
   const retryDelay = 1000 // 1秒
@@ -395,17 +414,10 @@ const sendMessage = async () => {
   const attemptRequest = async () => {
     try {
       isLoading.value = true
-      // 设置当前对话的流式状态
       streamingStateMap.value.set(sendingChatId, true)
 
-      // 构建URL
       const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7816'
       const url = `${baseUrl}/user/chat/model`
-
-      let accumulatedData = ''
-      let lastErrorTime = 0
-      let errorCount = 0
-      const maxErrorsPerMinute = 5
 
       // 首先验证 token 是否有效
       try {
@@ -414,32 +426,60 @@ const sendMessage = async () => {
           throw new Error('Token validation failed')
         }
       } catch (error) {
-        // Token 验证失败，清理状态并跳转到登录页
         if (!error.config?._isRetry) {
           userStore.logout()
+          await router.push('/login')
         }
         streamingStateMap.value.delete(sendingChatId)
         isLoading.value = false
         return false
       }
 
-      const response = await axios.get(url, {
-        params: {
-          sessionId: currentChat.sessionId,
-          message: message.content
-        },
+      // 创建自定义的 axios 实例用于流式请求
+      const axiosInstance = axios.create({
+        timeout: 600000, // 10分钟超时
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
         headers: {
           'Authorization': `Bearer ${token.value}`,
           'Accept': 'text/event-stream',
           'Cache-Control': 'no-cache',
           'Connection': 'keep-alive'
+        }
+      })
+
+      // 添加重试拦截器
+      axiosInstance.interceptors.response.use(
+        response => response,
+        async error => {
+          if (error.code === 'ECONNABORTED' || error.message.includes('Network Error')) {
+            console.warn('连接中断，正在重试...')
+            const lastMessage = messagesMap.value[sendingChatId]?.at(-1)
+            if (lastMessage && lastMessage.role === 'assistant') {
+              const currentContent = lastMessage.content || ''
+              // 记录当前进度
+              const retryConfig = {
+                ...error.config,
+                headers: {
+                  ...error.config.headers,
+                  'X-Content-Position': currentContent.length.toString()
+                }
+              }
+              // 延迟重试
+              await new Promise(resolve => setTimeout(resolve, 1000))
+              return axiosInstance(retryConfig)
+            }
+          }
+          throw error
+        }
+      )
+
+      const response = await axiosInstance.get(url, {
+        params: {
+          sessionId: currentChat.sessionId,
+          message: message.content
         },
         responseType: 'stream',
-        timeout: 60000, // 60秒超时
-        validateStatus: function (status) {
-          // 添加状态码验证，401 状态码将被视为错误
-          return status === 200
-        },
         onDownloadProgress: (progressEvent) => {
           try {
             const data = progressEvent.event.target.response
@@ -448,11 +488,12 @@ const sendMessage = async () => {
               accumulatedData = data
 
               const lines = newData.split('\n')
+              let hasValidData = false
               lines.forEach(line => {
                 if (line.startsWith('data:')) {
                   const eventData = line.slice(5)
                   if (eventData.trim()) {
-                    // 使用发送时的会话ID来更新消息
+                    hasValidData = true
                     const lastMessage = messagesMap.value[sendingChatId]?.at(-1)
                     if (lastMessage && lastMessage.role === 'assistant') {
                       if (!lastMessage.content) {
@@ -460,49 +501,48 @@ const sendMessage = async () => {
                       } else {
                         lastMessage.content += eventData
                       }
-                      // 只有当前显示的是发送消息的会话时才滚动
-                      if (currentChatId.value === sendingChatId) {
-                        nextTick(() => {
-                          scrollToBottom()
-                        })
-                      }
+                      debouncedScroll()
                     }
                   }
                 }
               })
+
+              // 如果接收到有效数据，重置重试计数
+              if (hasValidData) {
+                retryCount = 0
+              }
+
+              // 检查是否是最后一个响应
+              if (data.includes('[DONE]') || data.endsWith('[DONE]')) {
+                responseComplete = true
+              }
             }
           } catch (error) {
-            const now = Date.now()
-            if (now - lastErrorTime > 60000) { // 重置每分钟错误计数
-              errorCount = 0
-              lastErrorTime = now
-            }
-            
-            errorCount++
             console.warn('Stream processing error:', error)
-            
-            if (errorCount > maxErrorsPerMinute) {
-              throw new Error('Too many errors in stream processing')
-            }
+            // 不要在这里抛出错误，让拦截器处理重试
           }
         }
       })
 
       // 请求完成后的处理
-      streamingStateMap.value.delete(sendingChatId) // 清除流式状态
+      streamingStateMap.value.delete(sendingChatId)
       isLoading.value = false
       
       if (chatList.value[0]?.id === sendingChatId && chatList.value[0]?.title === '新对话') {
         chatList.value[0].title = message.content.slice(0, 20) + (message.content.length > 20 ? '...' : '')
       }
 
-      return true // 成功标志
+      await nextTick()
+      scrollToBottom()
+
+      return true
     } catch (error) {
       console.error('发送消息失败:', error)
       
       // 特殊处理 401 错误
       if (error.response?.status === 401 && !error.config?._isRetry) {
         userStore.logout()
+        await router.push('/login')
         streamingStateMap.value.delete(sendingChatId)
         isLoading.value = false
         return false
@@ -516,6 +556,7 @@ const sendMessage = async () => {
         retryCount < maxRetries
       ) {
         retryCount++
+        console.warn(`请求失败，第 ${retryCount} 次重试...`)
         await new Promise(resolve => setTimeout(resolve, retryDelay * retryCount))
         return attemptRequest() // 递归重试
       }
@@ -531,16 +572,29 @@ const sendMessage = async () => {
       // 保留已经接收到的内容
       const lastMessage = messagesMap.value[sendingChatId]?.at(-1)
       if (lastMessage && lastMessage.role === 'assistant' && !lastMessage.content) {
-        lastMessage.content = '抱歉，消息发送过程中出现错误。已接收的内容如下：\n' + accumulatedData
+        lastMessage.content = '抱歉，消息发送过程中出现错误。已接收的内容如下：\n' + (accumulatedData || '')
       }
 
-      streamingStateMap.value.delete(sendingChatId) // 清除流式状态
+      streamingStateMap.value.delete(sendingChatId)
       isLoading.value = false
-      return false // 失败标志
+      return false
     }
   }
 
   return attemptRequest()
+}
+
+// 修改滚动到底部的函数
+const scrollToBottom = () => {
+  if (messagesContainer.value) {
+    const container = messagesContainer.value
+    const shouldSmoothScroll = container.scrollHeight - (container.scrollTop + container.clientHeight) > 500
+    
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: shouldSmoothScroll ? 'smooth' : 'auto'
+    })
+  }
 }
 
 // 添加消息处理函数
@@ -674,14 +728,6 @@ const copyMessage = async (content) => {
     ElMessage.success('复制成功')
   } catch (error) {
     ElMessage.error('复制失败')
-  }
-}
-
-// 滚动到底部
-const scrollToBottom = async () => {
-  await nextTick()
-  if (messagesContainer.value) {
-    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
   }
 }
 
@@ -861,9 +907,12 @@ const loadChatHistory = async (chatId, sessionId) => {
         }
       }
       
-      // 滚动到底部
+      // 确保在消息加载完成后滚动到底部
       await nextTick()
-      scrollToBottom()
+      // 使用 setTimeout 确保 DOM 完全更新后再滚动
+      setTimeout(() => {
+        scrollToBottom()
+      }, 100)
     }
   } catch (error) {
     console.error('加载聊天历史失败:', error)
@@ -873,6 +922,27 @@ const loadChatHistory = async (chatId, sessionId) => {
   }
 }
 
+// 添加监听消息变化的 watch
+watch(
+  () => currentMessages.value,
+  () => {
+    nextTick(() => {
+      scrollToBottom()
+    })
+  },
+  { deep: true }
+)
+
+// 添加监听当前会话ID变化的 watch
+watch(
+  () => currentChatId.value,
+  () => {
+    nextTick(() => {
+      scrollToBottom()
+    })
+  }
+)
+
 // 初始化
 onMounted(async () => {
   // 检查认证状态
@@ -880,8 +950,37 @@ onMounted(async () => {
     await router.push('/login')
     return
   }
-  // 加载历史会话列表
-  await loadSessionList()
+
+  // 尝试恢复之前的状态
+  const savedState = sessionStorage.getItem('chatState')
+  if (savedState) {
+    try {
+      const state = JSON.parse(savedState)
+      chatList.value = state.chatList
+      messagesMap.value = state.messagesMap
+      inputMessagesMap.value = state.inputMessagesMap
+      currentChatId.value = state.currentChatId
+
+      // 清除已使用的状态
+      sessionStorage.removeItem('chatState')
+
+      // 等待 DOM 更新后恢复滚动位置
+      await nextTick()
+      if (messagesContainer.value && state.scrollPosition) {
+        messagesContainer.value.scrollTop = state.scrollPosition
+      }
+    } catch (error) {
+      console.error('恢复状态失败:', error)
+      // 如果恢复失败，则加载新的会话列表
+      await loadSessionList()
+    }
+  } else {
+    // 如果没有保存的状态，则加载新的会话列表
+    await loadSessionList()
+  }
+
+  // 初始聚焦
+  focusInput()
 })
 
 // 组件卸载时清理
@@ -927,6 +1026,41 @@ class EventSourceWithAuth extends EventSource {
     super(fullUrl, eventSourceInit);
   }
 }
+
+// 在 script setup 部分添加 inputRef
+const inputRef = ref(null)
+const shouldFocus = ref(true)
+
+// 修改聚焦输入框的函数
+const focusInput = () => {
+  if (!shouldFocus.value) return
+  
+  setTimeout(() => {
+    if (inputRef.value) {
+      // 使用 Element Plus 的 focus 方法
+      inputRef.value.focus()
+    }
+  }, 100)
+}
+
+// 添加输入框失焦处理
+const handleInputBlur = () => {
+  // 如果不是因为发送消息导致的失焦，就保持焦点
+  if (shouldFocus.value) {
+    focusInput()
+  }
+}
+
+// 添加组件激活时的处理
+onActivated(() => {
+  shouldFocus.value = true
+  focusInput()
+})
+
+// 添加组件停用时的处理
+onDeactivated(() => {
+  shouldFocus.value = false
+})
 </script>
 
 <style scoped>
