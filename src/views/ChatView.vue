@@ -407,6 +407,41 @@ const sendMessage = async () => {
     }, 100)
   }
 
+  const handleStreamData = (data) => {
+    if (!data) return false
+
+    try {
+      const newData = data.substring(accumulatedData.length)
+      accumulatedData = data
+
+      const lines = newData.split('\n')
+      let hasValidData = false
+      
+      lines.forEach(line => {
+        if (line.startsWith('data:')) {
+          const eventData = line.slice(5).trim()
+          if (eventData) {
+            hasValidData = true
+            const lastMessage = messagesMap.value[sendingChatId]?.at(-1)
+            if (lastMessage && lastMessage.role === 'assistant') {
+              if (!lastMessage.content) {
+                lastMessage.content = eventData
+              } else {
+                lastMessage.content += eventData
+              }
+              debouncedScroll()
+            }
+          }
+        }
+      })
+
+      return hasValidData
+    } catch (error) {
+      console.error('Error processing stream data:', error)
+      return false
+    }
+  }
+
   let retryCount = 0
   const maxRetries = 3
   const retryDelay = 1000 // 1秒
@@ -443,12 +478,12 @@ const sendMessage = async () => {
         headers: {
           'Authorization': `Bearer ${token.value}`,
           'Accept': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive'
-        }
+          'Cache-Control': 'no-cache'
+        },
+        responseType: 'text'
       })
 
-      // 添加重试拦截器
+      // 添加响应拦截器
       axiosInstance.interceptors.response.use(
         response => response,
         async error => {
@@ -457,7 +492,6 @@ const sendMessage = async () => {
             const lastMessage = messagesMap.value[sendingChatId]?.at(-1)
             if (lastMessage && lastMessage.role === 'assistant') {
               const currentContent = lastMessage.content || ''
-              // 记录当前进度
               const retryConfig = {
                 ...error.config,
                 headers: {
@@ -465,7 +499,6 @@ const sendMessage = async () => {
                   'X-Content-Position': currentContent.length.toString()
                 }
               }
-              // 延迟重试
               await new Promise(resolve => setTimeout(resolve, 1000))
               return axiosInstance(retryConfig)
             }
@@ -479,52 +512,23 @@ const sendMessage = async () => {
           sessionId: currentChat.sessionId,
           message: message.content
         },
-        responseType: 'stream',
         onDownloadProgress: (progressEvent) => {
           try {
             const data = progressEvent.event.target.response
-            if (data) {
-              const newData = data.substring(accumulatedData.length)
-              accumulatedData = data
-
-              const lines = newData.split('\n')
-              let hasValidData = false
-              lines.forEach(line => {
-                if (line.startsWith('data:')) {
-                  const eventData = line.slice(5)
-                  if (eventData.trim()) {
-                    hasValidData = true
-                    const lastMessage = messagesMap.value[sendingChatId]?.at(-1)
-                    if (lastMessage && lastMessage.role === 'assistant') {
-                      if (!lastMessage.content) {
-                        lastMessage.content = eventData
-                      } else {
-                        lastMessage.content += eventData
-                      }
-                      debouncedScroll()
-                    }
-                  }
-                }
-              })
-
-              // 如果接收到有效数据，重置重试计数
-              if (hasValidData) {
-                retryCount = 0
-              }
-
-              // 检查是否是最后一个响应
-              if (data.includes('[DONE]') || data.endsWith('[DONE]')) {
-                responseComplete = true
-              }
-            }
+            console.log('Received chunk:', data.slice(-50)) // 只记录最后50个字符，避免日志过大
+            handleStreamData(data)
           } catch (error) {
             console.warn('Stream processing error:', error)
-            // 不要在这里抛出错误，让拦截器处理重试
           }
         }
       })
 
       // 请求完成后的处理
+      if (!responseComplete) {
+        console.log('Request completed but response not marked as complete, forcing completion...')
+        handleStreamData(response.data + '\ndata:\n') // 强制添加结束标记
+      }
+
       streamingStateMap.value.delete(sendingChatId)
       isLoading.value = false
       
@@ -632,26 +636,37 @@ const handleEventMessage = (event, chatId, responseTextMap, shouldScroll = true)
       return
     }
 
+    // 处理标点符号
     if (/^[,.!?，。！？、]/.test(currentData) && responseText) {
       responseText = responseText.replace(/\s+$/, '')
     }
 
+    // 处理引号
     if (currentData === '"' || currentData === '"') {
       responseText += currentData
     } else {
+      // 改进的空格处理逻辑
       if (responseText) {
         const lastChar = responseText.slice(-1)
         const currentFirstChar = currentData.charAt(0)
         
+        // 检查是否需要在单词之间添加空格
+        const isLastCharWord = /[a-zA-Z0-9]/.test(lastChar)
+        const isCurrentFirstCharWord = /[a-zA-Z0-9]/.test(currentFirstChar)
+        const isLastCharChinese = /[\u4e00-\u9fa5]/.test(lastChar)
+        const isCurrentFirstCharChinese = /[\u4e00-\u9fa5]/.test(currentFirstChar)
+        
+        // 如果前后都是英文或数字，或者是中英文混合，则需要添加空格
         const needSpace = 
           !/^[,.!?，。！？、]/.test(currentData) &&
           lastChar !== '"' &&
           lastChar.trim() && 
           currentFirstChar.trim() &&
-          ((/[a-zA-Z0-9]/.test(lastChar) && /[a-zA-Z0-9\u4e00-\u9fa5]/.test(currentFirstChar)) ||
-           (/[\u4e00-\u9fa5]/.test(lastChar) && /[a-zA-Z0-9]/.test(currentFirstChar)))
+          ((isLastCharWord && isCurrentFirstCharWord) ||
+           (isLastCharChinese && isCurrentFirstCharWord) ||
+           (isLastCharWord && isCurrentFirstCharChinese))
 
-        if (needSpace) {
+        if (needSpace && !/\s$/.test(responseText)) {
           responseText += ' '
         }
       }
@@ -763,7 +778,10 @@ const formRules = {
   ]
 }
 
-// 显示用户个人中心
+// 添加一个变量来跟踪对话框状态
+const isDialogOpen = ref(false)
+
+// 修改显示用户个人中心的函数
 const showUserProfile = async () => {
   try {
     const response = await axios.get('/user/auth/detail')
@@ -776,13 +794,44 @@ const showUserProfile = async () => {
         phone: userDetail.phone || '',
         gender: userDetail.gender ?? 0
       }
+      isDialogOpen.value = true
       dialogVisible.value = true
+      shouldFocus.value = false // 当对话框打开时，禁用输入框自动聚焦
     } else {
       ElMessage.error('获取用户信息失败')
     }
   } catch (error) {
     console.error('获取用户信息失败:', error)
     ElMessage.error('获取用户信息失败，请稍后重试')
+  }
+}
+
+// 监听对话框关闭事件
+watch(dialogVisible, (newValue) => {
+  if (!newValue) { // 当对话框关闭时
+    isDialogOpen.value = false
+    setTimeout(() => {
+      shouldFocus.value = true // 恢复输入框自动聚焦
+      focusInput()
+    }, 100)
+  }
+})
+
+// 修改聚焦输入框的函数
+const focusInput = () => {
+  if (!shouldFocus.value || isDialogOpen.value) return
+  
+  setTimeout(() => {
+    if (inputRef.value && !isDialogOpen.value) {
+      inputRef.value.focus()
+    }
+  }, 100)
+}
+
+// 修改输入框失焦处理
+const handleInputBlur = () => {
+  if (shouldFocus.value && !isDialogOpen.value) {
+    focusInput()
   }
 }
 
@@ -951,35 +1000,7 @@ onMounted(async () => {
     return
   }
 
-  // 尝试恢复之前的状态
-  const savedState = sessionStorage.getItem('chatState')
-  if (savedState) {
-    try {
-      const state = JSON.parse(savedState)
-      chatList.value = state.chatList
-      messagesMap.value = state.messagesMap
-      inputMessagesMap.value = state.inputMessagesMap
-      currentChatId.value = state.currentChatId
-
-      // 清除已使用的状态
-      sessionStorage.removeItem('chatState')
-
-      // 等待 DOM 更新后恢复滚动位置
-      await nextTick()
-      if (messagesContainer.value && state.scrollPosition) {
-        messagesContainer.value.scrollTop = state.scrollPosition
-      }
-    } catch (error) {
-      console.error('恢复状态失败:', error)
-      // 如果恢复失败，则加载新的会话列表
-      await loadSessionList()
-    }
-  } else {
-    // 如果没有保存的状态，则加载新的会话列表
-    await loadSessionList()
-  }
-
-  // 初始聚焦
+  await loadSessionList()
   focusInput()
 })
 
@@ -1030,26 +1051,6 @@ class EventSourceWithAuth extends EventSource {
 // 在 script setup 部分添加 inputRef
 const inputRef = ref(null)
 const shouldFocus = ref(true)
-
-// 修改聚焦输入框的函数
-const focusInput = () => {
-  if (!shouldFocus.value) return
-  
-  setTimeout(() => {
-    if (inputRef.value) {
-      // 使用 Element Plus 的 focus 方法
-      inputRef.value.focus()
-    }
-  }, 100)
-}
-
-// 添加输入框失焦处理
-const handleInputBlur = () => {
-  // 如果不是因为发送消息导致的失焦，就保持焦点
-  if (shouldFocus.value) {
-    focusInput()
-  }
-}
 
 // 添加组件激活时的处理
 onActivated(() => {
