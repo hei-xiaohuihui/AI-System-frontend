@@ -57,7 +57,9 @@ axios.interceptors.response.use(
     } else if (error.request && !error.config._isHandled) {
       error.config._isHandled = true
       // 请求已发出但没有收到响应
-      ElMessage.error('网络错误，请检查网络连接')
+      if (!error.config._isRetry) {  // 只在非重试请求时显示错误
+        ElMessage.error('网络错误，请检查网络连接')
+      }
     } else if (!error.config._isHandled) {
       error.config._isHandled = true
       // 请求配置出错
