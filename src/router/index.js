@@ -1,47 +1,105 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useUserStore } from '../stores/user'
+import AdminLogin from '../views/AdminLogin.vue'
+import Dashboard from '../views/admin/Dashboard.vue'
+import AdminManagement from '../views/admin/AdminManagement.vue'
+import LectureManagement from '../views/admin/LectureManagement.vue'
+import StudentManagement from '../views/admin/StudentManagement.vue'
+
+// 用户路由
+const userRoutes = [
+  {
+    path: '/',
+    redirect: '/login'
+  },
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('@/views/LoginView.vue')
+  },
+  {
+    path: '/chat',
+    name: 'chat',
+    component: () => import('@/views/ChatView.vue'),
+    meta: { requiresAuth: true }
+  }
+]
+
+// 管理员路由
+const adminRoutes = [
+  {
+    path: '/admin',
+    children: [
+      {
+        path: 'login',
+        name: 'adminLogin',
+        component: AdminLogin
+      },
+      {
+        path: '',
+        component: Dashboard,
+        meta: { requiresAdminAuth: true },
+        children: [
+          {
+            path: 'dashboard',
+            name: 'adminDashboard',
+            component: () => import('../views/admin/Overview.vue')
+          },
+          {
+            path: 'admins',
+            name: 'adminManagement',
+            component: AdminManagement
+          },
+          {
+            path: 'students',
+            name: 'studentManagement',
+            component: StudentManagement
+          },
+          {
+            path: 'lectures',
+            name: 'lectureManagement',
+            component: LectureManagement
+          }
+        ]
+      }
+    ]
+  }
+]
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  routes: [
-    {
-      path: '/',
-      redirect: '/login'
-    },
-    {
-      path: '/login',
-      name: 'login',
-      component: () => import('@/views/LoginView.vue')
-    },
-    {
-      path: '/chat',
-      name: 'chat',
-      component: () => import('@/views/ChatView.vue'),
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/admin/login',
-      name: 'adminLogin',
-      component: () => import('@/views/AdminLogin.vue')
-    },
-    {
-      path: '/admin/dashboard',
-      name: 'adminDashboard',
-      component: () => import('@/views/AdminDashboard.vue'),
-      beforeEnter: (to, from, next) => {
-        const token = localStorage.getItem('adminToken')
-        if (!token) {
-          next('/admin/login')
-        } else {
-          next()
-        }
-      }
-    }
-  ]
+  routes: [...userRoutes, ...adminRoutes]
 })
 
-// 路由守卫
+// 管理员路由守卫
+const isAdminRoute = (path) => path.startsWith('/admin')
+const isAdminLoggedIn = () => !!localStorage.getItem('adminToken')
+
 router.beforeEach((to, from, next) => {
+  // 处理管理员路由
+  if (isAdminRoute(to.path)) {
+    // 如果是管理员登录页，直接通过
+    if (to.path === '/admin/login') {
+      // 如果已经登录，直接跳转到仪表盘
+      if (isAdminLoggedIn()) {
+        next('/admin/dashboard')
+        return
+      }
+      next()
+      return
+    }
+    
+    // 如果是其他管理员页面，检查管理员是否登录
+    if (!isAdminLoggedIn()) {
+      next('/admin/login')
+      return
+    }
+    
+    next()
+    return
+  }
+
+  // 处理用户路由
   const userStore = useUserStore()
   
   if (to.meta.requiresAuth && !userStore.isAuthenticated) {

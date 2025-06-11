@@ -6,35 +6,9 @@ import 'element-plus/dist/index.css'
 import 'highlight.js/styles/github.css'
 import App from './App.vue'
 import router from './router'
-import axios from 'axios'
+import request from './utils/request'
 
 console.log('Starting application initialization')
-
-// 配置axios默认值
-axios.defaults.baseURL = 'http://localhost:7816'
-axios.defaults.timeout = 10000
-axios.defaults.headers.common['Content-Type'] = 'application/json'
-
-// 从localStorage中获取token并设置
-const token = localStorage.getItem('token')
-if (token) {
-  console.log('Found existing token in localStorage')
-  axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
-}
-
-// 添加axios拦截器用于调试
-axios.interceptors.request.use(config => {
-  console.log('Sending request:', config.url, config)
-  return config
-})
-
-// 移除可能冲突的响应拦截器，只保留调试日志
-axios.interceptors.response.use(
-  response => {
-    console.log('Received response:', response.config.url, response)
-    return response
-  }
-)
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -49,6 +23,9 @@ app.config.errorHandler = (err, vm, info) => {
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }
+
+// 将request实例添加到全局属性
+app.config.globalProperties.$request = request
 
 app.use(pinia)
 app.use(router)

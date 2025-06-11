@@ -33,9 +33,9 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import request from '../utils/request'
 
 const router = useRouter()
 const error = ref('')
@@ -44,6 +44,14 @@ const isLoading = ref(false)
 const loginForm = reactive({
   username: '',
   password: ''
+})
+
+// 检查是否已登录
+onMounted(() => {
+  const token = localStorage.getItem('adminToken')
+  if (token) {
+    router.push('/admin/dashboard')
+  }
 })
 
 const handleLogin = async () => {
@@ -56,18 +64,28 @@ const handleLogin = async () => {
     isLoading.value = true
     error.value = ''
     
-    const response = await axios.post('http://localhost:7816/admin/auth/login', loginForm)
+    const response = await request.post('/admin/auth/login', loginForm)
+    
+    // 存储token
+    localStorage.setItem('adminToken', response.data)
+    
+    // 解析JWT获取用户信息
+    const tokenData = JSON.parse(atob(response.data.split('.')[1]))
+    // 存储管理员信息
+    localStorage.setItem('adminInfo', JSON.stringify({
+      adminId: tokenData.adminId,
+      adminName: tokenData.adminName,
+      adminRole: tokenData.adminRole
+    }))
 
-    if (response.data.code === 200) {
-      // 存储token
-      localStorage.setItem('adminToken', response.data.data)
-      // 登录成功后跳转到管理后台首页
-      router.push('/admin/dashboard')
-    } else {
-      throw new Error(response.data.message || '登录失败')
-    }
+    // 登录成功后跳转到管理后台首页
+    router.push('/admin/dashboard')
   } catch (err) {
+    console.error('Login error:', err)
     error.value = err.response?.data?.message || err.message || '登录失败，请重试'
+    // 清除可能存在的旧token
+    localStorage.removeItem('adminToken')
+    localStorage.removeItem('adminInfo')
   } finally {
     isLoading.value = false
   }
