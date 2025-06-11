@@ -171,7 +171,7 @@ const deleteChat = async (chatId) => {
       eventSourceMap.value.delete(chatId)
     }
     
-    await axios.delete('/user/chat/delete', {
+    await axios.delete('/user/session/delete', {
       params: { sessionId: chat.sessionId }
     })
     
@@ -435,7 +435,7 @@ const scrollToBottom = () => {
 
 const loadSessionList = async () => {
   try {
-    const response = await axios.get('/user/chat/sessionIds')
+    const response = await axios.get('/user/session/sessionIds')
     if (response.data.code === 200) {
       const sessionIds = response.data.data
       const chats = sessionIds.map(sessionId => ({
@@ -464,7 +464,7 @@ const loadSessionList = async () => {
 const loadChatHistory = async (chatId, sessionId) => {
   try {
     loadingHistory.value = true
-    const response = await axios.get('/user/chat/history', {
+    const response = await axios.get('/user/session/history', {
       params: { sessionId }
     })
     

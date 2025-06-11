@@ -18,6 +18,24 @@ const router = createRouter({
       name: 'chat',
       component: () => import('@/views/ChatView.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/admin/login',
+      name: 'adminLogin',
+      component: () => import('@/views/AdminLogin.vue')
+    },
+    {
+      path: '/admin/dashboard',
+      name: 'adminDashboard',
+      component: () => import('@/views/AdminDashboard.vue'),
+      beforeEnter: (to, from, next) => {
+        const token = localStorage.getItem('adminToken')
+        if (!token) {
+          next('/admin/login')
+        } else {
+          next()
+        }
+      }
     }
   ]
 })

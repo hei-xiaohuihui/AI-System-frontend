@@ -1,6 +1,7 @@
 <template>
   <div class="sidebar">
     <div class="sidebar-header">
+      <h1 class="system-title">AI客服系统</h1>
       <el-button type="primary" @click="createNewChat" plain>
         <el-icon><Plus /></el-icon>新对话
       </el-button>
@@ -91,6 +92,14 @@ const handleLogout = () => {
 .sidebar-header {
   padding: 16px;
   border-bottom: 1px solid #e0e0e0;
+}
+
+.system-title {
+  font-size: 1.5rem;
+  color: #409EFF;
+  margin: 0 0 16px 0;
+  text-align: center;
+  font-weight: 600;
 }
 
 .sidebar-header .el-button {

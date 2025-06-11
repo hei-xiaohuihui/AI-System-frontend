@@ -29,6 +29,11 @@
       </template>
       <template v-else>
         <div class="message-text" v-html="formatMessage(message.content, false)"></div>
+        <div class="message-actions">
+          <el-button type="text" size="small" @click="copyMessage(message.content)">
+            <el-icon><Document /></el-icon>复制
+          </el-button>
+        </div>
       </template>
     </div>
   </div>
@@ -253,5 +258,17 @@ const copyMessage = async (content) => {
   margin: -12px -16px -12px -16px;
   border-radius: 0 12px 12px 0;
   border-left: 4px solid #67C23A;
+}
+
+.message.user .message-actions {
+  justify-content: flex-start;
+}
+
+.message.user .message-actions .el-button {
+  color: #67C23A;
+}
+
+.message.user .message-actions .el-button:hover {
+  color: #529b2e;
 }
 </style> 
