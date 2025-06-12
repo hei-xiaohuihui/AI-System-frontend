@@ -1,23 +1,18 @@
 <template>
-  <div class="lecture-management">
+  <div class="lecture-container">
     <div class="page-header">
-      <h3>讲座管理</h3>
+      <h2>讲座管理</h2>
+      <el-button type="primary" @click="handleAdd">创建讲座</el-button>
     </div>
 
     <!-- 搜索表单 -->
-    <el-card class="search-card" style="margin-bottom: 20px;">
+    <el-card class="search-card">
       <el-form :model="searchForm" inline class="search-form">
         <div class="form-item-group">
           <el-form-item label="讲座标题">
             <el-input v-model="searchForm.title" placeholder="请输入讲座标题" clearable />
           </el-form-item>
-          <el-form-item label="讲师姓名">
-            <el-input v-model="searchForm.speakerName" placeholder="请输入讲师姓名" clearable />
-          </el-form-item>
-          <el-form-item label="讲师职称">
-            <el-input v-model="searchForm.speakerTitle" placeholder="请输入讲师职称" clearable />
-          </el-form-item>
-          <el-form-item label="地点">
+          <el-form-item label="讲座地点">
             <el-input v-model="searchForm.location" placeholder="请输入地点" clearable />
           </el-form-item>
           <el-form-item label="标签">
@@ -30,7 +25,7 @@
               range-separator="至"
               start-placeholder="开始时间"
               end-placeholder="结束时间"
-              value-format="YYYY-MM-DD HH:mm:ss"
+              value-format="YYYY-MM-DDTHH:mm:ss"
               :default-time="[
                 new Date(2000, 1, 1, 0, 0, 0),
                 new Date(2000, 1, 1, 23, 59, 59),
@@ -55,163 +50,220 @@
     </el-card>
 
     <!-- 讲座列表 -->
-    <el-card class="table-card">
-      <el-table :data="lectureList" style="width: 100%" v-loading="loading">
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="title" label="讲座标题" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="speakerName" label="讲师" width="100" />
-        <el-table-column prop="speakerTitle" label="职称" width="100" />
-        <el-table-column prop="location" label="地点" width="200" show-overflow-tooltip />
-        <el-table-column prop="lectureTime" label="讲座时间" width="180">
-          <template #default="scope">
-            {{ new Date(scope.row.lectureTime).toLocaleString() }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="capacity" label="容量" width="80" />
-        <el-table-column prop="enrollCount" label="已报名" width="80" />
-        <el-table-column prop="tags" label="标签" width="150" show-overflow-tooltip />
-        <el-table-column prop="status" label="状态" width="100">
-          <template #default="scope">
-            <el-tag :type="getStatusType(scope.row.status)">
-              {{ getStatusText(scope.row.status) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" fixed="right" width="200">
-          <template #default="scope">
-            <el-button-group v-if="scope.row.status === 'PENDING'">
-              <el-button
-                type="success"
-                :icon="Check"
-                @click="handleCheck(scope.row, 'APPROVED')"
-                size="small"
-              >
-                通过
-              </el-button>
-              <el-button
-                type="danger"
-                :icon="Close"
-                @click="handleCheck(scope.row, 'REJECTED')"
-                size="small"
-              >
-                拒绝
-              </el-button>
-            </el-button-group>
-            <el-button
-              v-else
-              type="primary"
-              :icon="View"
-              @click="handleView(scope.row)"
-              size="small"
-            >
-              查看
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      
-      <div class="pagination">
-        <el-pagination
-          v-model:current-page="currentPage"
-          v-model:page-size="pageSize"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          :total="total"
-          @size-change="handleSizeChange"
-          @current-change="handleCurrentChange"
-        />
-      </div>
-    </el-card>
-
-    <!-- 讲座详情对话框 -->
-    <el-dialog
-      v-model="dialogVisible"
-      :title="currentLecture?.title"
-      width="600px"
+    <el-table
+      v-loading="loading"
+      :data="lectureList"
+      style="width: 100%"
+      border
+      class="table-content"
     >
-      <div class="lecture-detail" v-if="currentLecture">
-        <div class="detail-item">
-          <label>讲师：</label>
-          <span>{{ currentLecture.speakerName }}</span>
-        </div>
-        <div class="detail-item">
-          <label>职称：</label>
-          <span>{{ currentLecture.speakerTitle }}</span>
-        </div>
-        <div class="detail-item">
-          <label>地点：</label>
-          <span>{{ currentLecture.location }}</span>
-        </div>
-        <div class="detail-item">
-          <label>讲座时间：</label>
-          <span>{{ new Date(currentLecture.lectureTime).toLocaleString() }}</span>
-        </div>
-        <div class="detail-item">
-          <label>容量：</label>
-          <span>{{ currentLecture.capacity }}人</span>
-        </div>
-        <div class="detail-item">
-          <label>已报名：</label>
-          <span>{{ currentLecture.enrollCount }}人</span>
-        </div>
-        <div class="detail-item">
-          <label>标签：</label>
-          <span>{{ currentLecture.tags }}</span>
-        </div>
-        <div class="detail-item">
-          <label>状态：</label>
-          <el-tag :type="getStatusType(currentLecture.status)">
-            {{ getStatusText(currentLecture.status) }}
+      <el-table-column prop="title" label="讲座标题" min-width="150" />
+      <el-table-column prop="description" label="讲座描述" min-width="200">
+        <template #default="{ row }">
+          <el-tooltip
+            :content="row.description"
+            placement="top"
+            :hide-after="0"
+          >
+            <span class="description-text">{{ row.description }}</span>
+          </el-tooltip>
+        </template>
+      </el-table-column>
+      <el-table-column prop="location" label="地点" min-width="180" />
+      <el-table-column prop="tags" label="标签" min-width="150">
+        <template #default="{ row }">
+          <el-tooltip
+            :content="row.tags"
+            placement="top"
+            :hide-after="0"
+          >
+            <span class="tags-text">{{ row.tags }}</span>
+          </el-tooltip>
+        </template>
+      </el-table-column>
+      <el-table-column prop="lectureTime" label="讲座时间" width="180">
+        <template #default="{ row }">
+          {{ formatDateTime(row.lectureTime) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="人数" width="120">
+        <template #default="{ row }">
+          {{ row.enrollCount }}/{{ row.capacity }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="status" label="状态" width="100">
+        <template #default="{ row }">
+          <el-tag :type="getStatusType(row.status)">
+            {{ getStatusText(row.status) }}
           </el-tag>
-        </div>
-        <div class="detail-item">
-          <label>简介：</label>
-          <p class="lecture-description">{{ currentLecture.description }}</p>
-        </div>
-        <div class="detail-item">
-          <label>创建时间：</label>
-          <span>{{ new Date(currentLecture.createdAt).toLocaleString() }}</span>
-        </div>
-        <div class="detail-item">
-          <label>更新时间：</label>
-          <span>{{ new Date(currentLecture.updatedAt).toLocaleString() }}</span>
-        </div>
-      </div>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="150" fixed="right">
+        <template #default="{ row }">
+          <el-button-group>
+            <el-button type="primary" @click="handleEdit(row)" :disabled="row.status === 'REJECTED'">编辑</el-button>
+            <el-button type="danger" @click="handleDelete(row)" :disabled="row.status === 'REJECTED'">删除</el-button>
+          </el-button-group>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <!-- 分页 -->
+    <div class="pagination-container">
+      <el-pagination
+        v-model:current-page="queryParams.pageNum"
+        v-model:page-size="queryParams.pageSize"
+        :total="total"
+        :page-sizes="[10, 20, 30, 50]"
+        layout="total, sizes, prev, pager, next, jumper"
+        @size-change="handleSizeChange"
+        @current-change="handleCurrentChange"
+      />
+    </div>
+
+    <!-- 创建/编辑讲座对话框 -->
+    <el-dialog
+      :title="dialogTitle"
+      v-model="dialogVisible"
+      width="600px"
+      @close="handleDialogClose"
+    >
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        label-width="100px"
+      >
+        <el-form-item label="讲座标题" prop="title">
+          <el-input v-model="form.title" placeholder="请输入讲座标题" />
+        </el-form-item>
+        <el-form-item label="讲座描述" prop="description">
+          <el-input
+            v-model="form.description"
+            type="textarea"
+            :rows="4"
+            placeholder="请输入讲座描述"
+          />
+        </el-form-item>
+        <el-form-item label="讲座地点" prop="location">
+          <el-input v-model="form.location" placeholder="请输入讲座地点" />
+        </el-form-item>
+        <el-form-item label="标签" prop="tags">
+          <el-input v-model="form.tags" placeholder="请输入标签，用逗号分隔" />
+        </el-form-item>
+        <el-form-item label="开始时间" prop="lectureTime">
+          <el-date-picker
+            v-model="form.lectureTime"
+            type="datetime"
+            placeholder="选择开始时间"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+            :disabled-date="disabledDate"
+            :disabled-time="disabledTime"
+          />
+        </el-form-item>
+        <el-form-item label="容量" prop="capacity">
+          <el-input-number
+            v-model="form.capacity"
+            :min="1"
+            :max="1000"
+            placeholder="请输入讲座容量"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleSubmit" :loading="submitting">
+          确定
+        </el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, watch } from 'vue'
-import { Search, Check, Close, View } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import request from '../../utils/request'
+import { createLecture, updateLecture, getLectureList, deleteLecture } from '@/api/lecture'
+import { formatDateTime } from '@/utils/format'
 
-const loading = ref(false)
-const dialogVisible = ref(false)
-const currentLecture = ref(null)
-const currentPage = ref(1)
-const pageSize = ref(10)
-const total = ref(0)
-const lectureList = ref([])
-const timeRange = ref([])
+// 查询参数
+const queryParams = ref({
+  pageNum: 1,
+  pageSize: 10
+})
 
+// 搜索表单
 const searchForm = reactive({
   title: '',
-  speakerName: '',
-  speakerTitle: '',
   location: '',
   tags: '',
   status: ''
 })
+const timeRange = ref([])
+
+// 数据列表
+const lectureList = ref([])
+const total = ref(0)
+const loading = ref(false)
+
+// 表单相关
+const dialogVisible = ref(false)
+const dialogTitle = ref('')
+const submitting = ref(false)
+const formRef = ref(null)
+const form = ref({
+  id: undefined,
+  title: '',
+  description: '',
+  location: '',
+  tags: '',
+  lectureTime: '',
+  capacity: 100
+})
+
+// 表单校验规则
+const rules = {
+  title: [
+    { required: true, message: '请输入讲座标题', trigger: 'blur' },
+    { min: 2, max: 100, message: '长度在 2 到 100 个字符', trigger: 'blur' }
+  ],
+  description: [
+    { required: true, message: '请输入讲座描述', trigger: 'blur' },
+    { min: 10, max: 500, message: '长度在 10 到 500 个字符', trigger: 'blur' }
+  ],
+  location: [
+    { required: true, message: '请输入讲座地点', trigger: 'blur' }
+  ],
+  tags: [
+    { required: true, message: '请输入标签', trigger: 'blur' }
+  ],
+  lectureTime: [
+    { required: true, message: '请选择开始时间', trigger: 'change' }
+  ],
+  capacity: [
+    { required: true, message: '请输入讲座容量', trigger: 'change' },
+    { type: 'number', min: 1, max: 1000, message: '容量范围在 1 到 1000 之间', trigger: 'change' }
+  ]
+}
+
+// 监听表单变化，自动保存到 localStorage
+watch(
+  () => ({ ...form.value }),
+  (newVal) => {
+    if (dialogVisible.value && !form.value.id) {  // 只在创建模式下保存
+      localStorage.setItem('lecture_draft', JSON.stringify(newVal))
+    }
+  },
+  { deep: true }
+)
 
 // 获取讲座列表
-const fetchLectureList = async () => {
+const getList = async () => {
   loading.value = true
   try {
+    // 构建查询参数
     const params = {
-      pageNum: currentPage.value,
-      pageSize: pageSize.value,
+      ...queryParams.value,
       ...searchForm
     }
     
@@ -221,64 +273,20 @@ const fetchLectureList = async () => {
       params.endTime = timeRange.value[1]
     }
 
-    const response = await request.get('/admin/superAdmin/lectures/page', {
-      params: params
-    })
-    console.log('Response:', response)
-    if (response.code === 200) {
-      lectureList.value = response.data.records
-      total.value = response.data.total
-    }
+    const { data } = await getLectureList(params)
+    lectureList.value = data.records
+    total.value = data.total
   } catch (error) {
-    console.error('Error:', error)
     ElMessage.error('获取讲座列表失败')
   } finally {
     loading.value = false
   }
 }
 
-// 审核讲座
-const handleCheck = async (lecture, status) => {
-  try {
-    const action = status === 'APPROVED' ? '通过' : '拒绝'
-    await ElMessageBox.confirm(
-      `确定要${action}该讲座吗？`,
-      '提示',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: status === 'APPROVED' ? 'success' : 'warning'
-      }
-    )
-    
-    const response = await request.put('/admin/superAdmin/lectures/check', null, {
-      params: {
-        id: lecture.id,
-        status
-      }
-    })
-    if (response.code === 200) {
-      ElMessage.success(`${action}成功`)
-      fetchLectureList()
-    }
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('Error:', error)
-      ElMessage.error('操作失败')
-    }
-  }
-}
-
-// 查看讲座详情
-const handleView = (lecture) => {
-  currentLecture.value = lecture
-  dialogVisible.value = true
-}
-
 // 搜索
 const handleSearch = () => {
-  currentPage.value = 1
-  fetchLectureList()
+  queryParams.value.pageNum = 1
+  getList()
 }
 
 // 重置搜索
@@ -287,18 +295,152 @@ const resetSearch = () => {
     searchForm[key] = ''
   })
   timeRange.value = []
-  currentPage.value = 1
-  fetchLectureList()
+  queryParams.value.pageNum = 1
+  getList()
 }
 
+// 处理分页变化
 const handleSizeChange = (val) => {
-  pageSize.value = val
-  fetchLectureList()
+  queryParams.value.pageSize = val
+  getList()
 }
 
 const handleCurrentChange = (val) => {
-  currentPage.value = val
-  fetchLectureList()
+  queryParams.value.pageNum = val
+  getList()
+}
+
+// 添加讲座
+const handleAdd = () => {
+  dialogTitle.value = '创建讲座'
+  dialogVisible.value = true
+  
+  // 尝试从 localStorage 恢复草稿
+  const draft = localStorage.getItem('lecture_draft')
+  if (draft) {
+    const draftData = JSON.parse(draft)
+    form.value = {
+      ...draftData,
+      id: undefined  // 确保是创建模式
+    }
+  } else {
+    form.value = {
+      id: undefined,
+      title: '',
+      description: '',
+      location: '',
+      tags: '',
+      lectureTime: '',
+      capacity: 100
+    }
+  }
+}
+
+// 编辑讲座
+const handleEdit = (row) => {
+  dialogTitle.value = '编辑讲座'
+  dialogVisible.value = true
+  form.value = {
+    ...row,
+    id: Number(row.id),
+    lectureTime: row.lectureTime
+  }
+}
+
+// 删除讲座
+const handleDelete = (row) => {
+  ElMessageBox.confirm(
+    '确定要删除这个讲座吗？',
+    '警告',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }
+  ).then(async () => {
+    try {
+      await deleteLecture(row.id)
+      ElMessage.success('删除成功')
+      getList()
+    } catch (error) {
+      ElMessage.error('删除失败')
+    }
+  })
+}
+
+// 处理对话框关闭
+const handleDialogClose = () => {
+  dialogVisible.value = false
+}
+
+// 提交表单
+const handleSubmit = async () => {
+  if (!formRef.value) return
+  
+  await formRef.value.validate(async (valid) => {
+    if (valid) {
+      submitting.value = true
+      try {
+        if (form.value.id) {
+          const updateData = {
+            id: Number(form.value.id),
+            title: form.value.title,
+            description: form.value.description,
+            location: form.value.location,
+            tags: form.value.tags,
+            lectureTime: form.value.lectureTime,
+            capacity: Number(form.value.capacity),
+            resourceUrl: form.value.resourceUrl || '',
+            ragDocId: form.value.ragDocId || ''
+          }
+          await updateLecture(updateData)
+          ElMessage.success('更新成功')
+        } else {
+          const createData = {
+            title: form.value.title,
+            description: form.value.description,
+            location: form.value.location,
+            tags: form.value.tags,
+            lectureTime: form.value.lectureTime,
+            capacity: Number(form.value.capacity)
+          }
+          await createLecture(createData)
+          ElMessage.success('创建成功')
+          // 创建成功后清除草稿
+          localStorage.removeItem('lecture_draft')
+        }
+        dialogVisible.value = false
+        getList()
+      } catch (error) {
+        console.error('提交失败:', error)
+        ElMessage.error(form.value.id ? '更新失败' : '创建失败')
+      } finally {
+        submitting.value = false
+      }
+    }
+  })
+}
+
+// 禁用过去的日期
+const disabledDate = (time) => {
+  return time.getTime() < Date.now() - 8.64e7 // 禁用今天之前的日期
+}
+
+// 禁用过去的时间
+const disabledTime = (date) => {
+  if (!date) return
+  const now = new Date()
+  const isToday = new Date(date).toDateString() === now.toDateString()
+  
+  if (isToday) {
+    const hours = now.getHours()
+    const minutes = now.getMinutes()
+    return {
+      disabledHours: () => Array.from({ length: hours }, (_, i) => i),
+      disabledMinutes: (hour) => hour === hours ? Array.from({ length: minutes }, (_, i) => i) : []
+    }
+  }
+  return {}
 }
 
 // 状态相关工具函数
@@ -321,13 +463,13 @@ const getStatusText = (status) => {
 }
 
 onMounted(() => {
-  fetchLectureList()
+  getList()
 })
 </script>
 
 <style scoped>
-.lecture-management {
-  min-height: 100%;
+.lecture-container {
+  padding: 20px;
 }
 
 .page-header {
@@ -337,10 +479,8 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 
-.page-header h3 {
+.page-header h2 {
   margin: 0;
-  font-size: 20px;
-  font-weight: 500;
 }
 
 .search-card {
@@ -364,35 +504,23 @@ onMounted(() => {
   align-items: flex-start;
 }
 
-.table-card {
-  margin-bottom: 20px;
+.table-content {
+  margin-top: 20px;
 }
 
-.pagination {
+.description-text,
+.tags-text {
+  display: inline-block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pagination-container {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
-}
-
-.lecture-detail {
-  padding: 10px;
-}
-
-.detail-item {
-  margin-bottom: 15px;
-}
-
-.detail-item label {
-  font-weight: 500;
-  margin-right: 10px;
-  color: #606266;
-}
-
-.lecture-description {
-  margin: 10px 0;
-  white-space: pre-wrap;
-  color: #606266;
-  line-height: 1.6;
 }
 
 :deep(.el-tag) {

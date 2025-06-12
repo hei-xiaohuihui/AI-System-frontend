@@ -59,6 +59,11 @@ const adminRoutes = [
             path: 'lectures',
             name: 'lectureManagement',
             component: LectureManagement
+          },
+          {
+            path: 'profile',
+            name: 'profile',
+            component: () => import('../views/admin/Profile.vue')
           }
         ]
       }
@@ -74,6 +79,18 @@ const router = createRouter({
 // 管理员路由守卫
 const isAdminRoute = (path) => path.startsWith('/admin')
 const isAdminLoggedIn = () => !!localStorage.getItem('adminToken')
+const getAdminRole = () => {
+  const adminInfo = localStorage.getItem('adminInfo')
+  if (adminInfo) {
+    try {
+      const { adminRole } = JSON.parse(adminInfo)
+      return adminRole
+    } catch (e) {
+      return null
+    }
+  }
+  return null
+}
 
 router.beforeEach((to, from, next) => {
   // 处理管理员路由
@@ -93,6 +110,16 @@ router.beforeEach((to, from, next) => {
     if (!isAdminLoggedIn()) {
       next('/admin/login')
       return
+    }
+
+    // 检查角色权限
+    const adminRole = getAdminRole()
+    if (adminRole === 'LECTURER') {
+      // 讲师只能访问讲座管理页面和个人信息页面
+      if (to.path !== '/admin/lectures' && to.path !== '/admin/dashboard' && to.path !== '/admin/profile') {
+        next('/admin/lectures')
+        return
+      }
     }
     
     next()

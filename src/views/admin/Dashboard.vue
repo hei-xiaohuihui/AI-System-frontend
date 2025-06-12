@@ -7,33 +7,40 @@
         background-color="#001529"
         text-color="#fff"
         active-text-color="#1890ff"
+        :default-active="$route.path"
       >
         <el-menu-item index="/admin/dashboard">
           <el-icon><DataBoard /></el-icon>
           <span>仪表盘</span>
         </el-menu-item>
-        <el-menu-item index="/admin/admins">
-          <el-icon><User /></el-icon>
-          <span>管理员管理</span>
-        </el-menu-item>
-        <el-menu-item index="/admin/students">
-          <el-icon><Avatar /></el-icon>
-          <span>学生管理</span>
-        </el-menu-item>
+        <template v-if="isSuper">
+          <el-menu-item index="/admin/admins">
+            <el-icon><User /></el-icon>
+            <span>讲师管理</span>
+          </el-menu-item>
+          <el-menu-item index="/admin/students">
+            <el-icon><Avatar /></el-icon>
+            <span>学生管理</span>
+          </el-menu-item>
+        </template>
         <el-menu-item index="/admin/lectures">
           <el-icon><Calendar /></el-icon>
           <span>讲座管理</span>
+        </el-menu-item>
+        <el-menu-item index="/admin/profile">
+          <el-icon><Setting /></el-icon>
+          <span>个人信息</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
     <el-container>
       <el-header>
         <div class="header-content">
-          <h2>AI客服系统 - 超级管理员</h2>
+          <h2>AI客服系统 - {{ isSuper ? '超级管理员您好' : '讲师您好' }}</h2>
           <el-dropdown @command="handleCommand">
             <span class="user-dropdown">
               <el-icon><UserFilled /></el-icon>
-              管理员
+              {{ adminInfo.adminName || '管理员' }}
               <el-icon><CaretBottom /></el-icon>
             </span>
             <template #dropdown>
@@ -52,10 +59,29 @@
 </template>
 
 <script setup>
-import { DataBoard, User, Calendar, UserFilled, CaretBottom, Avatar } from '@element-plus/icons-vue'
+import { ref, computed, onMounted } from 'vue'
+import { DataBoard, User, Calendar, UserFilled, CaretBottom, Avatar, Setting } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
+const adminInfo = ref({})
+
+// 判断是否是超级管理员
+const isSuper = computed(() => {
+  return adminInfo.value.adminRole === 'SUPER_ADMIN'
+})
+
+// 获取管理员信息
+onMounted(() => {
+  const storedInfo = localStorage.getItem('adminInfo')
+  if (storedInfo) {
+    try {
+      adminInfo.value = JSON.parse(storedInfo)
+    } catch (e) {
+      console.error('Failed to parse admin info:', e)
+    }
+  }
+})
 
 const handleCommand = (command) => {
   if (command === 'logout') {
