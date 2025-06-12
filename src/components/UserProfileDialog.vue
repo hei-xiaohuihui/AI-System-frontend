@@ -18,6 +18,22 @@
       label-width="80px"
       class="user-form"
     >
+      <el-form-item label="真实姓名" prop="realName">
+        <el-input
+          v-model="form.realName"
+          placeholder="请输入真实姓名"
+          clearable
+        />
+      </el-form-item>
+      
+      <el-form-item label="学号" prop="studentId">
+        <el-input
+          v-model="form.studentId"
+          placeholder="请输入学号"
+          clearable
+        />
+      </el-form-item>
+      
       <el-form-item label="密码" prop="password">
         <el-input
           v-model="form.password"
@@ -92,6 +108,8 @@ const username = computed(() => userStore.getUserInfo.username)
 
 const form = ref({
   password: '',
+  realName: '',
+  studentId: '',
   email: '',
   phone: '',
   gender: 0
@@ -100,6 +118,12 @@ const form = ref({
 const formRules = {
   password: [
     { min: 6, max: 20, message: '密码长度必须在6到20之间', trigger: 'blur' }
+  ],
+  realName: [
+    { required: true, message: '请输入真实姓名', trigger: 'blur' }
+  ],
+  studentId: [
+    { required: true, message: '请输入学号', trigger: 'blur' }
   ],
   email: [
     { type: 'email', message: '请输入正确的邮箱地址', trigger: 'blur' }
@@ -116,6 +140,8 @@ const loadUserInfo = async () => {
       const userDetail = response.data.data
       form.value = {
         password: '',
+        realName: userDetail.realName || '',
+        studentId: userDetail.studentId || '',
         email: userDetail.email || '',
         phone: userDetail.phone || '',
         gender: userDetail.gender ?? 0
@@ -144,6 +170,12 @@ const handleUpdate = async () => {
     const updateData = {}
     if (form.value.password) {
       updateData.password = form.value.password
+    }
+    if (form.value.realName !== userStore.getUserInfo.realName) {
+      updateData.realName = form.value.realName
+    }
+    if (form.value.studentId !== userStore.getUserInfo.studentId) {
+      updateData.studentId = form.value.studentId
     }
     if (form.value.email !== userStore.getUserInfo.email) {
       updateData.email = form.value.email

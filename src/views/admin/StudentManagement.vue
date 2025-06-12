@@ -2,21 +2,58 @@
   <div class="student-management">
     <div class="page-header">
       <h3>学生管理</h3>
-      <el-button type="primary" @click="dialogVisible = true">
-        <el-icon><Plus /></el-icon>
-        创建学生
-      </el-button>
     </div>
+
+    <!-- 搜索表单 -->
+    <el-card class="search-card" style="margin-bottom: 20px;">
+      <el-form :model="searchForm" inline class="search-form">
+        <div class="form-item-group">
+          <el-form-item label="用户名">
+            <el-input v-model="searchForm.username" placeholder="请输入用户名" clearable />
+          </el-form-item>
+          <el-form-item label="姓名">
+            <el-input v-model="searchForm.realName" placeholder="请输入姓名" clearable />
+          </el-form-item>
+          <el-form-item label="学号">
+            <el-input v-model="searchForm.studentId" placeholder="请输入学号" clearable />
+          </el-form-item>
+          <el-form-item label="邮箱">
+            <el-input v-model="searchForm.email" placeholder="请输入邮箱" clearable />
+          </el-form-item>
+          <el-form-item label="电话">
+            <el-input v-model="searchForm.phone" placeholder="请输入电话" clearable />
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 120px;">
+              <el-option label="正常" :value="1" />
+              <el-option label="禁用" :value="0" />
+            </el-select>
+          </el-form-item>
+        </div>
+        <div class="form-buttons">
+          <el-form-item>
+            <el-button type="primary" @click="handleSearch">搜索</el-button>
+            <el-button @click="resetSearch">重置</el-button>
+          </el-form-item>
+        </div>
+      </el-form>
+    </el-card>
 
     <!-- 学生列表 -->
     <el-card class="table-card">
       <el-table :data="studentList" style="width: 100%" v-loading="loading">
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="username" label="用户名" width="150" />
-        <el-table-column prop="name" label="姓名" width="120" />
+        <el-table-column prop="realName" label="姓名" width="120" />
         <el-table-column prop="studentId" label="学号" width="120" />
         <el-table-column prop="email" label="邮箱" width="200" />
-        <el-table-column prop="createTime" label="创建时间" width="180" />
+        <el-table-column prop="phone" label="电话" width="120" />
+        <el-table-column prop="gender" label="性别" width="80">
+          <template #default="scope">
+            {{ scope.row.gender === 1 ? '男' : scope.row.gender === 2 ? '女' : '未知' }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="createdAt" label="创建时间" width="180" />
         <el-table-column prop="status" label="状态" width="100">
           <template #default="scope">
             <el-tag :type="scope.row.status === 1 ? 'success' : 'danger'">
@@ -48,147 +85,99 @@
         />
       </div>
     </el-card>
-
-    <!-- 创建学生对话框 -->
-    <el-dialog
-      v-model="dialogVisible"
-      title="创建学生"
-      width="500px"
-    >
-      <el-form
-        ref="formRef"
-        :model="form"
-        :rules="rules"
-        label-width="80px"
-      >
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="form.username" placeholder="请输入用户名" />
-        </el-form-item>
-        <el-form-item label="密码" prop="password">
-          <el-input v-model="form.password" type="password" placeholder="请输入密码" />
-        </el-form-item>
-        <el-form-item label="姓名" prop="name">
-          <el-input v-model="form.name" placeholder="请输入姓名" />
-        </el-form-item>
-        <el-form-item label="学号" prop="studentId">
-          <el-input v-model="form.studentId" placeholder="请输入学号" />
-        </el-form-item>
-        <el-form-item label="邮箱" prop="email">
-          <el-input v-model="form.email" placeholder="请输入邮箱" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="dialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="handleCreate" :loading="creating">
-            创建
-          </el-button>
-        </span>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import request from '../../utils/request'
 
 const loading = ref(false)
-const creating = ref(false)
-const dialogVisible = ref(false)
-const formRef = ref(null)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 const studentList = ref([])
 
-const form = reactive({
+// 搜索表单
+const searchForm = reactive({
   username: '',
-  password: '',
-  name: '',
+  realName: '',
   studentId: '',
-  email: ''
+  email: '',
+  phone: '',
+  status: ''
 })
-
-const rules = {
-  username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 5, max: 20, message: '长度在 5 到 20 个字符', trigger: 'blur' }
-  ],
-  password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, max: 20, message: '长度在 6 到 20 个字符', trigger: 'blur' }
-  ],
-  name: [
-    { required: true, message: '请输入姓名', trigger: 'blur' }
-  ],
-  studentId: [
-    { required: true, message: '请输入学号', trigger: 'blur' },
-    { pattern: /^\d{8,12}$/, message: '学号必须是8-12位数字', trigger: 'blur' }
-  ],
-  email: [
-    { required: true, message: '请输入邮箱', trigger: 'blur' },
-    { type: 'email', message: '请输入正确的邮箱地址', trigger: 'blur' }
-  ]
-}
 
 // 获取学生列表
 const fetchStudentList = async () => {
   loading.value = true
   try {
-    const response = await request.post('/admin/superAdmin/userPage', {
+    const params = {
       pageNum: currentPage.value,
-      pageSize: pageSize.value,
-      role: 'STUDENT'
+      pageSize: pageSize.value
+    }
+    
+    // 只添加有值的搜索条件
+    if (searchForm.username) params.username = searchForm.username
+    if (searchForm.realName) params.realName = searchForm.realName
+    if (searchForm.studentId) params.studentId = searchForm.studentId
+    if (searchForm.email) params.email = searchForm.email
+    if (searchForm.phone) params.phone = searchForm.phone
+    if (searchForm.status !== '') params.status = searchForm.status
+
+    const response = await request.get('/admin/superAdmin/userPage', {
+      params: params
     })
-    studentList.value = response.data.records
-    total.value = response.data.total
+    console.log('Response:', response)
+    if (response.code === 200) {
+      studentList.value = response.data.records
+      total.value = response.data.total
+    }
   } catch (error) {
+    console.error('Error:', error)
     ElMessage.error('获取学生列表失败')
   } finally {
     loading.value = false
   }
 }
 
-// 创建学生
-const handleCreate = async () => {
-  if (!formRef.value) return
-  
-  await formRef.value.validate(async (valid) => {
-    if (valid) {
-      creating.value = true
-      try {
-        await request.post('/admin/superAdmin/createUser', {
-          ...form,
-          role: 'STUDENT'
-        })
-        ElMessage.success('创建成功')
-        dialogVisible.value = false
-        fetchStudentList()
-        formRef.value.resetFields()
-      } catch (error) {
-        ElMessage.error(error.response?.data?.message || '创建失败')
-      } finally {
-        creating.value = false
-      }
-    }
-  })
-}
-
 // 更新学生状态
 const handleStatusChange = async (row) => {
   try {
-    await request.post('/admin/superAdmin/updateUserStatus', {
-      userId: row.id,
-      status: row.status
+    // 使用 URLSearchParams 来发送表单数据
+    const params = new URLSearchParams()
+    params.append('userId', row.id)
+    params.append('status', row.status)
+
+    await request.post('/admin/superAdmin/updateUserStatus', params, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
     })
     ElMessage.success('状态更新成功')
   } catch (error) {
     ElMessage.error('状态更新失败')
     row.status = row.status === 1 ? 0 : 1 // 恢复原状态
   }
+}
+
+// 搜索
+const handleSearch = () => {
+  currentPage.value = 1
+  fetchStudentList()
+}
+
+// 重置搜索
+const resetSearch = () => {
+  searchForm.username = ''
+  searchForm.realName = ''
+  searchForm.studentId = ''
+  searchForm.email = ''
+  searchForm.phone = ''
+  searchForm.status = ''
+  currentPage.value = 1
+  fetchStudentList()
 }
 
 const handleSizeChange = (val) => {
@@ -224,6 +213,27 @@ onMounted(() => {
   font-weight: 500;
 }
 
+.search-card {
+  margin-bottom: 20px;
+}
+
+.search-form {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.form-item-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.form-buttons {
+  display: flex;
+  align-items: flex-start;
+}
+
 .table-card {
   margin-bottom: 20px;
 }
@@ -232,12 +242,6 @@ onMounted(() => {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
-}
-
-.dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
 }
 
 :deep(.el-tag) {
