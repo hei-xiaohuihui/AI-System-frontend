@@ -2,45 +2,74 @@
   <div class="lecture-management">
     <div class="page-header">
       <h3>讲座管理</h3>
-      <el-form :inline="true" :model="searchForm" class="search-form">
-        <el-form-item>
-          <el-input
-            v-model="searchForm.keyword"
-            placeholder="搜索讲座"
-            clearable
-            @keyup.enter="handleSearch"
-          >
-            <template #prefix>
-              <el-icon><Search /></el-icon>
-            </template>
-          </el-input>
-        </el-form-item>
-        <el-form-item>
-          <el-select v-model="searchForm.status" placeholder="讲座状态" clearable>
-            <el-option label="待审核" value="PENDING" />
-            <el-option label="已通过" value="APPROVED" />
-            <el-option label="已拒绝" value="REJECTED" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleSearch">搜索</el-button>
-          <el-button @click="resetSearch">重置</el-button>
-        </el-form-item>
-      </el-form>
     </div>
+
+    <!-- 搜索表单 -->
+    <el-card class="search-card" style="margin-bottom: 20px;">
+      <el-form :model="searchForm" inline class="search-form">
+        <div class="form-item-group">
+          <el-form-item label="讲座标题">
+            <el-input v-model="searchForm.title" placeholder="请输入讲座标题" clearable />
+          </el-form-item>
+          <el-form-item label="讲师姓名">
+            <el-input v-model="searchForm.speakerName" placeholder="请输入讲师姓名" clearable />
+          </el-form-item>
+          <el-form-item label="讲师职称">
+            <el-input v-model="searchForm.speakerTitle" placeholder="请输入讲师职称" clearable />
+          </el-form-item>
+          <el-form-item label="地点">
+            <el-input v-model="searchForm.location" placeholder="请输入地点" clearable />
+          </el-form-item>
+          <el-form-item label="标签">
+            <el-input v-model="searchForm.tags" placeholder="请输入标签" clearable />
+          </el-form-item>
+          <el-form-item label="时间范围">
+            <el-date-picker
+              v-model="timeRange"
+              type="datetimerange"
+              range-separator="至"
+              start-placeholder="开始时间"
+              end-placeholder="结束时间"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              :default-time="[
+                new Date(2000, 1, 1, 0, 0, 0),
+                new Date(2000, 1, 1, 23, 59, 59),
+              ]"
+            />
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 120px;">
+              <el-option label="待审核" value="PENDING" />
+              <el-option label="已通过" value="APPROVED" />
+              <el-option label="已拒绝" value="REJECTED" />
+            </el-select>
+          </el-form-item>
+        </div>
+        <div class="form-buttons">
+          <el-form-item>
+            <el-button type="primary" @click="handleSearch">搜索</el-button>
+            <el-button @click="resetSearch">重置</el-button>
+          </el-form-item>
+        </div>
+      </el-form>
+    </el-card>
 
     <!-- 讲座列表 -->
     <el-card class="table-card">
       <el-table :data="lectureList" style="width: 100%" v-loading="loading">
         <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="title" label="讲座标题" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="lecturer" label="讲师" width="120" />
-        <el-table-column prop="startTime" label="开始时间" width="180" />
-        <el-table-column prop="duration" label="时长" width="100">
+        <el-table-column prop="title" label="讲座标题" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="speakerName" label="讲师" width="100" />
+        <el-table-column prop="speakerTitle" label="职称" width="100" />
+        <el-table-column prop="location" label="地点" width="200" show-overflow-tooltip />
+        <el-table-column prop="lectureTime" label="讲座时间" width="180">
           <template #default="scope">
-            {{ scope.row.duration }}分钟
+            {{ new Date(scope.row.lectureTime).toLocaleString() }}
           </template>
         </el-table-column>
+        <el-table-column prop="capacity" label="容量" width="80" />
+        <el-table-column prop="enrollCount" label="已报名" width="80" />
+        <el-table-column prop="tags" label="标签" width="150" show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="100">
           <template #default="scope">
             <el-tag :type="getStatusType(scope.row.status)">
@@ -103,15 +132,31 @@
       <div class="lecture-detail" v-if="currentLecture">
         <div class="detail-item">
           <label>讲师：</label>
-          <span>{{ currentLecture.lecturer }}</span>
+          <span>{{ currentLecture.speakerName }}</span>
         </div>
         <div class="detail-item">
-          <label>开始时间：</label>
-          <span>{{ currentLecture.startTime }}</span>
+          <label>职称：</label>
+          <span>{{ currentLecture.speakerTitle }}</span>
         </div>
         <div class="detail-item">
-          <label>时长：</label>
-          <span>{{ currentLecture.duration }}分钟</span>
+          <label>地点：</label>
+          <span>{{ currentLecture.location }}</span>
+        </div>
+        <div class="detail-item">
+          <label>讲座时间：</label>
+          <span>{{ new Date(currentLecture.lectureTime).toLocaleString() }}</span>
+        </div>
+        <div class="detail-item">
+          <label>容量：</label>
+          <span>{{ currentLecture.capacity }}人</span>
+        </div>
+        <div class="detail-item">
+          <label>已报名：</label>
+          <span>{{ currentLecture.enrollCount }}人</span>
+        </div>
+        <div class="detail-item">
+          <label>标签：</label>
+          <span>{{ currentLecture.tags }}</span>
         </div>
         <div class="detail-item">
           <label>状态：</label>
@@ -123,16 +168,24 @@
           <label>简介：</label>
           <p class="lecture-description">{{ currentLecture.description }}</p>
         </div>
+        <div class="detail-item">
+          <label>创建时间：</label>
+          <span>{{ new Date(currentLecture.createdAt).toLocaleString() }}</span>
+        </div>
+        <div class="detail-item">
+          <label>更新时间：</label>
+          <span>{{ new Date(currentLecture.updatedAt).toLocaleString() }}</span>
+        </div>
       </div>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { Search, Check, Close, View } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import axios from 'axios'
+import request from '../../utils/request'
 
 const loading = ref(false)
 const dialogVisible = ref(false)
@@ -141,9 +194,14 @@ const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 const lectureList = ref([])
+const timeRange = ref([])
 
 const searchForm = reactive({
-  keyword: '',
+  title: '',
+  speakerName: '',
+  speakerTitle: '',
+  location: '',
+  tags: '',
   status: ''
 })
 
@@ -151,19 +209,28 @@ const searchForm = reactive({
 const fetchLectureList = async () => {
   loading.value = true
   try {
-    const response = await axios.get('/admin/superAdmin/lectures/page', {
-      params: {
-        page: currentPage.value,
-        pageSize: pageSize.value,
-        keyword: searchForm.keyword,
-        status: searchForm.status
-      }
+    const params = {
+      pageNum: currentPage.value,
+      pageSize: pageSize.value,
+      ...searchForm
+    }
+    
+    // 添加时间范围
+    if (timeRange.value?.length === 2) {
+      params.startTime = timeRange.value[0]
+      params.endTime = timeRange.value[1]
+    }
+
+    const response = await request.get('/admin/superAdmin/lectures/page', {
+      params: params
     })
-    if (response.data.code === 200) {
-      lectureList.value = response.data.data.records
-      total.value = response.data.data.total
+    console.log('Response:', response)
+    if (response.code === 200) {
+      lectureList.value = response.data.records
+      total.value = response.data.total
     }
   } catch (error) {
+    console.error('Error:', error)
     ElMessage.error('获取讲座列表失败')
   } finally {
     loading.value = false
@@ -184,16 +251,19 @@ const handleCheck = async (lecture, status) => {
       }
     )
     
-    await axios.put('/admin/superAdmin/lectures/check', null, {
+    const response = await request.put('/admin/superAdmin/lectures/check', null, {
       params: {
         id: lecture.id,
         status
       }
     })
-    ElMessage.success(`${action}成功`)
-    fetchLectureList()
+    if (response.code === 200) {
+      ElMessage.success(`${action}成功`)
+      fetchLectureList()
+    }
   } catch (error) {
     if (error !== 'cancel') {
+      console.error('Error:', error)
       ElMessage.error('操作失败')
     }
   }
@@ -213,9 +283,12 @@ const handleSearch = () => {
 
 // 重置搜索
 const resetSearch = () => {
-  searchForm.keyword = ''
-  searchForm.status = ''
-  handleSearch()
+  Object.keys(searchForm).forEach(key => {
+    searchForm[key] = ''
+  })
+  timeRange.value = []
+  currentPage.value = 1
+  fetchLectureList()
 }
 
 const handleSizeChange = (val) => {
@@ -258,19 +331,37 @@ onMounted(() => {
 }
 
 .page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 20px;
 }
 
 .page-header h3 {
-  margin: 0 0 20px 0;
+  margin: 0;
   font-size: 20px;
   font-weight: 500;
 }
 
+.search-card {
+  margin-bottom: 20px;
+}
+
 .search-form {
   display: flex;
-  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.form-item-group {
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
+}
+
+.form-buttons {
+  display: flex;
+  align-items: flex-start;
 }
 
 .table-card {

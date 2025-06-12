@@ -63,6 +63,7 @@
         </el-table-column>
         <el-table-column label="操作" fixed="right" width="150">
           <template #default="scope">
+            <el-button type="primary" link @click="handleEdit(scope.row)">编辑</el-button>
             <el-switch
               v-model="scope.row.status"
               :active-value="1"
@@ -126,6 +127,53 @@
         </span>
       </template>
     </el-dialog>
+
+    <!-- 编辑讲师对话框 -->
+    <el-dialog
+      v-model="editDialogVisible"
+      title="编辑讲师信息"
+      width="500px"
+    >
+      <el-form
+        ref="editFormRef"
+        :model="editForm"
+        :rules="editRules"
+        label-width="80px"
+      >
+        <el-form-item label="用户名" prop="username">
+          <el-input v-model="editForm.username" placeholder="请输入用户名" />
+        </el-form-item>
+        <el-form-item label="密码" prop="password">
+          <el-input v-model="editForm.password" type="password" placeholder="不修改请留空" />
+        </el-form-item>
+        <el-form-item label="讲师姓名" prop="lecturerName">
+          <el-input v-model="editForm.lecturerName" placeholder="请输入讲师姓名" />
+        </el-form-item>
+        <el-form-item label="讲师职称" prop="lecturerTitle">
+          <el-input v-model="editForm.lecturerTitle" placeholder="请输入讲师职称" />
+        </el-form-item>
+        <el-form-item label="邮箱" prop="email">
+          <el-input v-model="editForm.email" placeholder="请输入邮箱" />
+        </el-form-item>
+        <el-form-item label="电话" prop="phone">
+          <el-input v-model="editForm.phone" placeholder="请输入电话" />
+        </el-form-item>
+        <el-form-item label="性别" prop="gender">
+          <el-select v-model="editForm.gender" placeholder="请选择性别">
+            <el-option label="男" :value="1" />
+            <el-option label="女" :value="2" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="editDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="handleUpdate" :loading="updating">
+            更新
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -138,11 +186,14 @@ import request from '../../utils/request'
 const loading = ref(false)
 const creating = ref(false)
 const dialogVisible = ref(false)
+const editDialogVisible = ref(false)
 const formRef = ref(null)
+const editFormRef = ref(null)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 const adminList = ref([])
+const updating = ref(false)
 
 // 搜索表单
 const searchForm = reactive({
@@ -162,6 +213,18 @@ const form = reactive({
   gender: undefined
 })
 
+// 编辑表单
+const editForm = reactive({
+  id: undefined,
+  username: '',
+  password: '',
+  lecturerName: '',
+  lecturerTitle: '',
+  email: '',
+  phone: '',
+  gender: undefined
+})
+
 const rules = {
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
@@ -169,6 +232,23 @@ const rules = {
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
+    { min: 6, max: 20, message: '密码长度必须在6到20之间', trigger: 'blur' }
+  ],
+  email: [
+    { type: 'email', message: '请输入正确的邮箱地址', trigger: 'blur' }
+  ],
+  phone: [
+    { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }
+  ]
+}
+
+// 编辑表单校验规则
+const editRules = {
+  username: [
+    { required: true, message: '请输入用户名', trigger: 'blur' },
+    { min: 5, max: 20, message: '用户名长度必须在5到20之间', trigger: 'blur' }
+  ],
+  password: [
     { min: 6, max: 20, message: '密码长度必须在6到20之间', trigger: 'blur' }
   ],
   email: [
@@ -274,6 +354,46 @@ const handleSizeChange = (val) => {
 const handleCurrentChange = (val) => {
   currentPage.value = val
   fetchAdminList()
+}
+
+// 打开编辑对话框
+const handleEdit = (row) => {
+  editForm.id = row.id
+  editForm.username = row.username
+  editForm.password = '' // 密码不回显
+  editForm.lecturerName = row.lecturerName
+  editForm.lecturerTitle = row.lecturerTitle
+  editForm.email = row.email
+  editForm.phone = row.phone
+  editForm.gender = row.gender
+  editDialogVisible.value = true
+}
+
+// 更新讲师信息
+const handleUpdate = async () => {
+  if (!editFormRef.value) return
+  
+  await editFormRef.value.validate(async (valid) => {
+    if (valid) {
+      updating.value = true
+      try {
+        // 如果密码为空，不传递密码字段
+        const updateData = { ...editForm }
+        if (!updateData.password) {
+          delete updateData.password
+        }
+        
+        await request.post('/admin/superAdmin/updateAdminInfo', updateData)
+        ElMessage.success('更新成功')
+        editDialogVisible.value = false
+        fetchAdminList()
+      } catch (error) {
+        ElMessage.error(error.response?.data?.message || '更新失败')
+      } finally {
+        updating.value = false
+      }
+    }
+  })
 }
 
 onMounted(() => {
