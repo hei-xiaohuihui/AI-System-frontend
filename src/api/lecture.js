@@ -46,11 +46,14 @@ export function getLectureList(params) {
 }
 
 // 讲师删除讲座
-export function deleteLecture(id) {
+export function deleteLecture(id, resourceUrl) {
   return request({
     url: '/admin/lecturer/lectures/delete',
     method: 'delete',
-    params: { id: Number(id) }
+    params: { 
+      id: Number(id),
+      resourceUrl
+    }
   })
 }
 
