@@ -14,14 +14,18 @@
           <span>仪表盘</span>
         </el-menu-item>
         <template v-if="isSuper">
-        <el-menu-item index="/admin/admins">
-          <el-icon><User /></el-icon>
+          <el-menu-item index="/admin/admins">
+            <el-icon><User /></el-icon>
             <span>讲师管理</span>
-        </el-menu-item>
-        <el-menu-item index="/admin/students">
-          <el-icon><Avatar /></el-icon>
-          <span>学生管理</span>
-        </el-menu-item>
+          </el-menu-item>
+          <el-menu-item index="/admin/students">
+            <el-icon><Avatar /></el-icon>
+            <span>学生管理</span>
+          </el-menu-item>
+          <el-menu-item index="/admin/knowledge-management">
+            <el-icon><Document /></el-icon>
+            <span>知识库管理</span>
+          </el-menu-item>
         </template>
         <el-menu-item index="/admin/lectures">
           <el-icon><Calendar /></el-icon>
@@ -52,7 +56,9 @@
         </div>
       </el-header>
       <el-main>
-        <router-view></router-view>
+        <router-view v-slot="{ Component }">
+          <component :is="Component" />
+        </router-view>
       </el-main>
     </el-container>
   </el-container>
@@ -60,7 +66,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { DataBoard, User, Calendar, UserFilled, CaretBottom, Avatar, Setting } from '@element-plus/icons-vue'
+import { DataBoard, User, Calendar, UserFilled, CaretBottom, Avatar, Setting, Document } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()

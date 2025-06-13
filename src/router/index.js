@@ -28,44 +28,45 @@ const userRoutes = [
 // 管理员路由
 const adminRoutes = [
   {
+    path: '/admin/login',
+    name: 'adminLogin',
+    component: AdminLogin
+  },
+  {
     path: '/admin',
+    component: Dashboard,
+    meta: { requiresAdminAuth: true },
     children: [
       {
-        path: 'login',
-        name: 'adminLogin',
-        component: AdminLogin
+        path: 'dashboard',
+        name: 'adminDashboard',
+        component: () => import('../views/admin/Overview.vue')
       },
       {
-        path: '',
-        component: Dashboard,
-        meta: { requiresAdminAuth: true },
-        children: [
-          {
-            path: 'dashboard',
-            name: 'adminDashboard',
-            component: () => import('../views/admin/Overview.vue')
-          },
-          {
-            path: 'admins',
-            name: 'adminManagement',
-            component: AdminManagement
-          },
-          {
-            path: 'students',
-            name: 'studentManagement',
-            component: StudentManagement
-          },
-          {
-            path: 'lectures',
-            name: 'lectureManagement',
-            component: LectureManagement
-          },
-          {
-            path: 'profile',
-            name: 'profile',
-            component: () => import('../views/admin/Profile.vue')
-          }
-        ]
+        path: 'admins',
+        name: 'adminManagement',
+        component: AdminManagement
+      },
+      {
+        path: 'students',
+        name: 'studentManagement',
+        component: StudentManagement
+      },
+      {
+        path: 'lectures',
+        name: 'lectureManagement',
+        component: LectureManagement
+      },
+      {
+        path: 'profile',
+        name: 'profile',
+        component: () => import('../views/admin/Profile.vue')
+      },
+      {
+        path: 'knowledge-management',
+        name: 'KnowledgeManagement',
+        component: () => import('@/views/admin/KnowledgeManagement.vue'),
+        meta: { title: '知识库管理', icon: 'BookOutlined', roles: ['SUPER_ADMIN'] }
       }
     ]
   }
@@ -120,6 +121,10 @@ router.beforeEach((to, from, next) => {
         next('/admin/lectures')
         return
       }
+    } else if (adminRole !== 'SUPER_ADMIN' && to.meta.roles && to.meta.roles.includes('SUPER_ADMIN')) {
+      // 非超级管理员不能访问超级管理员专属页面
+      next('/admin/dashboard')
+      return
     }
     
     next()

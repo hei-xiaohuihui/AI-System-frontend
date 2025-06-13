@@ -15,4 +15,59 @@ export function updateAdminInfo(data) {
     method: 'post',
     data
   })
+}
+
+// Knowledge Document Management APIs
+export function createKnowledgeDoc(data) {
+  return request({
+    url: '/admin/superAdmin/knowledgeDoc/create',
+    method: 'post',
+    data
+  })
+}
+
+export function updateKnowledgeDoc(data) {
+  return request({
+    url: '/admin/superAdmin/knowledgeDoc/update',
+    method: 'put',
+    data
+  })
+}
+
+export function deleteKnowledgeDoc(id, resourceUrl) {
+  return request({
+    url: '/admin/superAdmin/knowledgeDoc/delete',
+    method: 'delete',
+    params: {
+      id,
+      resourceUrl
+    }
+  })
+}
+
+export function getKnowledgeDocDetail(id) {
+  return request({
+    url: '/admin/superAdmin/knowledgeDoc/detail',
+    method: 'get',
+    params: { id }
+  })
+}
+
+export function pageKnowledgeDocs(params) {
+  return request({
+    url: '/admin/superAdmin/knowledgeDoc/page',
+    method: 'get',
+    params
+  })
+}
+
+export function uploadFile(data) {
+  return request({
+    url: '/admin/auth/uploadFile',
+    method: 'post',
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    },
+    data
+  })
 } 
