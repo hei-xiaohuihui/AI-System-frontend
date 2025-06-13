@@ -18,11 +18,18 @@ export function updateAdminInfo(data) {
 }
 
 // Knowledge Document Management APIs
-export function createKnowledgeDoc(data) {
+export function createKnowledgeDoc(data, file) {
+  const formData = new FormData()
+  formData.append('dto', new Blob([JSON.stringify(data)], { type: 'application/json' }))
+  formData.append('file', file)
+  
   return request({
     url: '/admin/superAdmin/knowledgeDoc/create',
     method: 'post',
-    data
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    },
+    data: formData
   })
 }
 

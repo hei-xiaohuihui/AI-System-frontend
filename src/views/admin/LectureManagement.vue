@@ -99,6 +99,19 @@
           {{ row.enrollCount }}/{{ row.capacity }}
           </template>
         </el-table-column>
+      <el-table-column prop="resourceUrl" label="讲座资料" width="120">
+        <template #default="{ row }">
+          <el-link
+            v-if="row.resourceUrl"
+            type="primary"
+            :href="row.resourceUrl"
+            target="_blank"
+          >
+            查看资料
+          </el-link>
+          <span v-else>暂无资料</span>
+        </template>
+      </el-table-column>
         <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
           <el-tag :type="getStatusType(row.status)">
@@ -192,6 +205,25 @@
             placeholder="请输入讲座容量"
           />
         </el-form-item>
+        <el-form-item label="讲座资料" prop="resourceUrl">
+          <el-upload
+            class="upload-demo"
+            :http-request="handleCustomUpload"
+            :before-upload="beforeUpload"
+            :limit="1"
+            :file-list="fileList"
+            :on-remove="handleRemoveFile"
+          >
+            <el-button type="primary">
+              <el-icon><Upload /></el-icon> 上传文件
+            </el-button>
+            <template #tip>
+              <div class="el-upload__tip">
+                只能上传 PDF 或 Word 文件
+              </div>
+            </template>
+          </el-upload>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -231,6 +263,25 @@
         <el-form-item label="标签" prop="tags">
           <el-input v-model="recreateForm.tags" placeholder="请输入标签" />
         </el-form-item>
+        <el-form-item label="讲座资料" prop="resourceUrl">
+          <el-upload
+            class="upload-demo"
+            :http-request="handleRecreateUpload"
+            :before-upload="beforeUpload"
+            :limit="1"
+            :file-list="recreateFileList"
+            :on-remove="handleRecreateRemoveFile"
+          >
+            <el-button type="primary">
+              <el-icon><Upload /></el-icon> 上传文件
+            </el-button>
+            <template #tip>
+              <div class="el-upload__tip">
+                只能上传 PDF 或 Word 文件
+              </div>
+            </template>
+          </el-upload>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="recreateDialogVisible = false">取消</el-button>
@@ -244,8 +295,10 @@
 import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createLecture, updateLecture, getLectureList, deleteLecture, checkLecture, recreateLecture } from '@/api/lecture'
+import { uploadFile } from '@/api/admin'
 import { formatDateTime } from '@/utils/format'
 import { getAdminRole } from '@/router'
+import { Upload } from '@element-plus/icons-vue'
 
 // 查询参数
 const queryParams = ref({
@@ -281,7 +334,9 @@ const form = ref({
   location: '',
   tags: '',
   lectureTime: '',
-  capacity: 100
+  capacity: 100,
+  resourceUrl: '',
+  ragDocId: ''
 })
 
 // 新增：再次提交相关
@@ -289,6 +344,7 @@ const recreateDialogVisible = ref(false)
 const recreateFormRef = ref(null)
 const recreateForm = ref({})
 const currentRecreateId = ref(null)
+const recreateFileList = ref([])
 
 // 表单校验规则
 const rules = {
@@ -409,7 +465,9 @@ const handleAdd = () => {
       location: '',
       tags: '',
       lectureTime: '',
-      capacity: 100
+      capacity: 100,
+      resourceUrl: '',
+      ragDocId: ''
     }
   }
 }
@@ -422,6 +480,14 @@ const handleEdit = (row) => {
     ...row,
     id: Number(row.id),
     lectureTime: row.lectureTime
+  }
+  if (row.resourceUrl) {
+    fileList.value = [{
+      name: '当前文件',
+      url: row.resourceUrl
+    }]
+  } else {
+    fileList.value = []
   }
 }
 
@@ -437,7 +503,7 @@ const handleDelete = (row) => {
     }
   ).then(async () => {
     try {
-      await deleteLecture(row.id)
+      await deleteLecture(row.id, row.resourceUrl || '')
       ElMessage.success('删除成功')
       getList()
     } catch (error) {
@@ -449,11 +515,29 @@ const handleDelete = (row) => {
 // 处理对话框关闭
 const handleDialogClose = () => {
   dialogVisible.value = false
+  fileList.value = []
+  form.value = {
+    id: undefined,
+    title: '',
+    description: '',
+    location: '',
+    tags: '',
+    lectureTime: '',
+    capacity: 100,
+    resourceUrl: '',
+    ragDocId: ''
+  }
 }
 
 // 提交表单
 const handleSubmit = async () => {
   if (!formRef.value) return
+  
+  // 检查是否有文件（在表单验证之前）
+  if (!form.value.id && (!fileList.value.length || !fileList.value[0].raw)) {
+    ElMessage.error('请上传讲座资料')
+    return
+  }
   
   await formRef.value.validate(async (valid) => {
     if (valid) {
@@ -468,8 +552,8 @@ const handleSubmit = async () => {
             tags: form.value.tags,
             lectureTime: form.value.lectureTime,
             capacity: Number(form.value.capacity),
-            resourceUrl: form.value.resourceUrl || '',
-            ragDocId: form.value.ragDocId || ''
+            resourceUrl: form.value.resourceUrl,
+            ragDocId: form.value.ragDocId
           }
           await updateLecture(updateData)
           ElMessage.success('更新成功')
@@ -482,7 +566,8 @@ const handleSubmit = async () => {
             lectureTime: form.value.lectureTime,
             capacity: Number(form.value.capacity)
           }
-          await createLecture(createData)
+          
+          await createLecture(createData, fileList.value[0].raw)
           ElMessage.success('创建成功')
           // 创建成功后清除草稿
           localStorage.removeItem('lecture_draft')
@@ -565,25 +650,104 @@ const handleRecreate = (row) => {
     location: row.location,
     capacity: row.capacity,
     tags: row.tags,
-    resourceUrl: row.resourceUrl || '',
-    ragDocId: row.ragDocId || ''
+    resourceUrl: row.resourceUrl || ''
+  }
+  // 如果有原文件，显示在文件列表中
+  if (row.resourceUrl) {
+    recreateFileList.value = [{
+      name: '当前文件',
+      url: row.resourceUrl
+    }]
+  } else {
+    recreateFileList.value = []
   }
 }
 
 const handleRecreateSubmit = async () => {
   if (!recreateFormRef.value) return
+
+  // 检查是否有文件（在表单验证之前）
+  if (!recreateFileList.value.length || !recreateFileList.value[0].raw) {
+    ElMessage.error('请上传讲座资料')
+    return
+  }
+  
   await recreateFormRef.value.validate(async (valid) => {
     if (valid) {
       try {
-        await recreateLecture(recreateForm.value)
+        const submitData = {
+          id: recreateForm.value.id,
+          title: recreateForm.value.title,
+          description: recreateForm.value.description,
+          lectureTime: recreateForm.value.lectureTime,
+          location: recreateForm.value.location,
+          capacity: Number(recreateForm.value.capacity),
+          tags: recreateForm.value.tags
+        }
+        
+        await recreateLecture(submitData, recreateFileList.value[0].raw)
         ElMessage.success('已重新提交审核')
         recreateDialogVisible.value = false
+        // 清空文件列表
+        recreateFileList.value = []
         getList()
       } catch (e) {
         ElMessage.error('提交失败')
       }
     }
   })
+}
+
+// 新增：文件上传相关
+const fileList = ref([])
+const handleCustomUpload = async ({ file }) => {
+  try {
+    // 直接存储文件对象，不再单独上传
+    fileList.value = [{
+      name: file.name,
+      raw: file // 保存原始文件对象
+    }]
+    ElMessage.success('文件已选择')
+  } catch (error) {
+    ElMessage.error('文件处理失败')
+  }
+}
+
+const beforeUpload = (file) => {
+  const allowedExtensions = ['.pdf', '.doc', '.docx']
+  const extension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
+  if (!allowedExtensions.includes(extension)) {
+    ElMessage.error('只能上传 PDF 或 Word 文件')
+    return false
+  }
+  return true
+}
+
+const handleRemoveFile = () => {
+  form.value.resourceUrl = ''
+  form.value.ragDocId = ''
+  fileList.value = []
+  ElMessage.success('文件移除成功')
+}
+
+// 新增：再次提交文件处理函数
+const handleRecreateUpload = async ({ file }) => {
+  try {
+    // 直接存储文件对象，不再单独上传
+    recreateFileList.value = [{
+      name: file.name,
+      raw: file // 保存原始文件对象
+    }]
+    ElMessage.success('文件已选择')
+  } catch (error) {
+    ElMessage.error('文件处理失败')
+  }
+}
+
+const handleRecreateRemoveFile = () => {
+  recreateForm.value.resourceUrl = ''
+  recreateFileList.value = []
+  ElMessage.success('文件移除成功')
 }
 
 onMounted(() => {

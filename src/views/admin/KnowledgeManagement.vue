@@ -94,16 +94,16 @@
       >
         <el-form
           ref="formRef"
-          :model="formData"
+          :model="form"
           :rules="rules"
           label-width="100px"
         >
           <el-form-item label="文档标题" prop="title">
-            <el-input v-model="formData.title" placeholder="请输入文档标题" />
+            <el-input v-model="form.title" placeholder="请输入文档标题" />
           </el-form-item>
           <el-form-item label="文档描述" prop="description">
             <el-input
-              v-model="formData.description"
+              v-model="form.description"
               type="textarea"
               :rows="4"
               placeholder="请输入文档描述"
@@ -177,11 +177,12 @@ const modalVisible = ref(false)
 const modalTitle = ref('')
 const modalLoading = ref(false)
 const formRef = ref(null)
-const formData = reactive({
-  id: null,
+const form = ref({
+  id: undefined,
   title: '',
   description: '',
-  resourceUrl: '',
+  resourceUrl: '', // 仅用于编辑时显示已有文件
+  ragDocId: ''
 })
 const fileList = ref([])
 const viewModalVisible = ref(false)
@@ -189,9 +190,14 @@ const viewData = ref({})
 
 // Form rules
 const rules = {
-  title: [{ required: true, message: '请输入文档标题', trigger: 'blur' }],
-  description: [{ required: true, message: '请输入文档描述', trigger: 'blur' }],
-  resourceUrl: [{ required: true, message: '请上传文档文件', trigger: 'change' }]
+  title: [
+    { required: true, message: '请输入文档标题', trigger: 'blur' },
+    { min: 2, max: 100, message: '长度在 2 到 100 个字符', trigger: 'blur' }
+  ],
+  description: [
+    { required: true, message: '请输入文档描述', trigger: 'blur' },
+    { min: 10, max: 500, message: '长度在 10 到 500 个字符', trigger: 'blur' }
+  ]
 }
 
 // Methods
@@ -229,10 +235,10 @@ const handleCurrentChange = (val) => {
 }
 
 const resetForm = () => {
-  formData.id = null
-  formData.title = ''
-  formData.description = ''
-  formData.resourceUrl = ''
+  form.value.id = undefined
+  form.value.title = ''
+  form.value.description = ''
+  form.value.resourceUrl = ''
   fileList.value = []
   if (formRef.value) {
     formRef.value.resetFields()
@@ -258,12 +264,12 @@ const handleView = async (record) => {
 const handleEdit = async (record) => {
   try {
     const res = await getKnowledgeDocDetail(record.id)
-    Object.assign(formData, res.data)
-    if (formData.resourceUrl) {
+    Object.assign(form.value, res.data)
+    if (form.value.resourceUrl) {
       fileList.value = [
         {
           name: '当前文档',
-          url: formData.resourceUrl,
+          url: form.value.resourceUrl,
         },
       ]
     }
@@ -302,52 +308,61 @@ const beforeUpload = (file) => {
 
 const handleCustomUpload = async ({ file }) => {
   try {
-    const uploadFormData = new FormData()
-    uploadFormData.append('file', file)
-    const res = await uploadFile(uploadFormData)
-    // 更新表单数据
-    formData.resourceUrl = res.data
-    // 更新文件列表显示
+    // 直接存储文件对象，不再单独上传
     fileList.value = [{
       name: file.name,
-      url: res.data
+      raw: file // 保存原始文件对象
     }]
-    ElMessage.success('上传成功')
-    return res
+    ElMessage.success('文件已选择')
   } catch (error) {
-    ElMessage.error('上传失败')
-    throw error
+    ElMessage.error('文件处理失败')
   }
 }
 
 const handleModalSubmit = async () => {
   if (!formRef.value) return
   
-  try {
-    await formRef.value.validate()
-    modalLoading.value = true
-
-    const submitData = {
-      ...formData,
-      resourceUrl: formData.resourceUrl
+  await formRef.value.validate(async (valid) => {
+    if (valid) {
+      modalLoading.value = true
+      try {
+        if (form.value.id) {
+          const updateData = {
+            id: Number(form.value.id),
+            title: form.value.title,
+            description: form.value.description,
+            resourceUrl: form.value.resourceUrl,
+            ragDocId: form.value.ragDocId
+          }
+          await updateKnowledgeDoc(updateData)
+          ElMessage.success('更新成功')
+        } else {
+          // 检查是否有文件
+          if (!fileList.value.length || !fileList.value[0].raw) {
+            ElMessage.error('请上传文档文件')
+            return
+          }
+          
+          const createData = {
+            title: form.value.title,
+            description: form.value.description
+          }
+          
+          await createKnowledgeDoc(createData, fileList.value[0].raw)
+          ElMessage.success('创建成功')
+          // 创建成功后清除草稿
+          localStorage.removeItem('knowledge_draft')
+        }
+        modalVisible.value = false
+        fetchData()
+      } catch (error) {
+        console.error('提交失败:', error)
+        ElMessage.error(form.value.id ? '更新失败' : '创建失败')
+      } finally {
+        modalLoading.value = false
+      }
     }
-
-    if (formData.id) {
-      await updateKnowledgeDoc(submitData)
-      ElMessage.success('更新成功')
-    } else {
-      await createKnowledgeDoc(submitData)
-      ElMessage.success('创建成功')
-    }
-
-    modalVisible.value = false
-    fetchData()
-  } catch (error) {
-    console.error(error)
-    ElMessage.error('操作失败')
-  } finally {
-    modalLoading.value = false
-  }
+  })
 }
 
 const handleModalCancel = () => {

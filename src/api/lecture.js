@@ -1,11 +1,18 @@
 import request from '@/utils/request'
 
 // 讲师创建讲座
-export function createLecture(data) {
+export function createLecture(data, file) {
+  const formData = new FormData()
+  formData.append('dto', new Blob([JSON.stringify(data)], { type: 'application/json' }))
+  formData.append('file', file)
+  
   return request({
     url: '/admin/lecturer/lectures/create',
     method: 'post',
-    data
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    },
+    data: formData
   })
 }
 
@@ -46,11 +53,14 @@ export function getLectureList(params) {
 }
 
 // 讲师删除讲座
-export function deleteLecture(id) {
+export function deleteLecture(id, resourceUrl) {
   return request({
     url: '/admin/lecturer/lectures/delete',
     method: 'delete',
-    params: { id: Number(id) }
+    params: { 
+      id: Number(id),
+      resourceUrl
+    }
   })
 }
 
@@ -64,10 +74,17 @@ export function checkLecture(id, status) {
 }
 
 // 讲师端重新提交讲座审核
-export function recreateLecture(data) {
+export function recreateLecture(data, file) {
+  const formData = new FormData()
+  formData.append('dto', new Blob([JSON.stringify(data)], { type: 'application/json' }))
+  formData.append('file', file)
+  
   return request({
     url: '/admin/lecturer/lectures/recreate',
     method: 'post',
-    data
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    },
+    data: formData
   })
 } 

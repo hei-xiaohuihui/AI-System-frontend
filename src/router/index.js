@@ -29,38 +29,38 @@ const userRoutes = [
 const adminRoutes = [
   {
     path: '/admin/login',
-    name: 'adminLogin',
-    component: AdminLogin
-  },
-  {
+        name: 'adminLogin',
+        component: AdminLogin
+      },
+      {
     path: '/admin',
-    component: Dashboard,
-    meta: { requiresAdminAuth: true },
-    children: [
-      {
-        path: 'dashboard',
-        name: 'adminDashboard',
-        component: () => import('../views/admin/Overview.vue')
-      },
-      {
-        path: 'admins',
-        name: 'adminManagement',
-        component: AdminManagement
-      },
-      {
-        path: 'students',
-        name: 'studentManagement',
-        component: StudentManagement
-      },
-      {
-        path: 'lectures',
-        name: 'lectureManagement',
-        component: LectureManagement
-      },
-      {
-        path: 'profile',
-        name: 'profile',
-        component: () => import('../views/admin/Profile.vue')
+        component: Dashboard,
+        meta: { requiresAdminAuth: true },
+        children: [
+          {
+            path: 'dashboard',
+            name: 'adminDashboard',
+            component: () => import('../views/admin/Overview.vue')
+          },
+          {
+            path: 'admins',
+            name: 'adminManagement',
+            component: AdminManagement
+          },
+          {
+            path: 'students',
+            name: 'studentManagement',
+            component: StudentManagement
+          },
+          {
+            path: 'lectures',
+            name: 'lectureManagement',
+            component: LectureManagement
+          },
+          {
+            path: 'profile',
+            name: 'profile',
+            component: () => import('../views/admin/Profile.vue')
       },
       {
         path: 'knowledge-management',
