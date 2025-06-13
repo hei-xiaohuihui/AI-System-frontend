@@ -14,14 +14,14 @@
           <span>仪表盘</span>
         </el-menu-item>
         <template v-if="isSuper">
-          <el-menu-item index="/admin/admins">
-            <el-icon><User /></el-icon>
+        <el-menu-item index="/admin/admins">
+          <el-icon><User /></el-icon>
             <span>讲师管理</span>
-          </el-menu-item>
-          <el-menu-item index="/admin/students">
-            <el-icon><Avatar /></el-icon>
-            <span>学生管理</span>
-          </el-menu-item>
+        </el-menu-item>
+        <el-menu-item index="/admin/students">
+          <el-icon><Avatar /></el-icon>
+          <span>学生管理</span>
+        </el-menu-item>
         </template>
         <el-menu-item index="/admin/lectures">
           <el-icon><Calendar /></el-icon>

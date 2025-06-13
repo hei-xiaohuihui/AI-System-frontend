@@ -2,38 +2,44 @@
   <div class="lecture-container">
     <div class="page-header">
       <h2>讲座管理</h2>
-      <el-button type="primary" @click="handleAdd">创建讲座</el-button>
+      <el-button-group v-if="getAdminRole() !== 'SUPER_ADMIN'">
+        <el-button type="primary" @click="handleAdd">创建讲座</el-button>
+      </el-button-group>
     </div>
 
     <!-- 搜索表单 -->
     <el-card class="search-card">
-      <el-form :model="searchForm" inline class="search-form">
+      <el-form :inline="true" :model="searchForm" class="search-form">
         <div class="form-item-group">
           <el-form-item label="讲座标题">
-            <el-input v-model="searchForm.title" placeholder="请输入讲座标题" clearable />
+            <el-input v-model="searchForm.title" placeholder="讲座标题" clearable @keyup.enter="getList" />
           </el-form-item>
           <el-form-item label="讲座地点">
-            <el-input v-model="searchForm.location" placeholder="请输入地点" clearable />
+            <el-input v-model="searchForm.location" placeholder="讲座地点" clearable @keyup.enter="getList" />
           </el-form-item>
-          <el-form-item label="标签">
-            <el-input v-model="searchForm.tags" placeholder="请输入标签" clearable />
+          <el-form-item label="讲座标签">
+            <el-input v-model="searchForm.tags" placeholder="讲座标签" clearable @keyup.enter="getList" />
           </el-form-item>
-          <el-form-item label="时间范围">
+          <el-form-item label="讲座时间">
             <el-date-picker
               v-model="timeRange"
               type="datetimerange"
               range-separator="至"
               start-placeholder="开始时间"
               end-placeholder="结束时间"
-              value-format="YYYY-MM-DDTHH:mm:ss"
-              :default-time="[
-                new Date(2000, 1, 1, 0, 0, 0),
-                new Date(2000, 1, 1, 23, 59, 59),
-              ]"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              :default-time="[new Date(2000, 1, 1, 0, 0, 0), new Date(2000, 1, 1, 23, 59, 59)]"
             />
           </el-form-item>
-          <el-form-item label="状态">
-            <el-select v-model="searchForm.status" placeholder="请选择状态" clearable style="width: 120px;">
+          <!-- 超级管理员特有字段 -->
+          <el-form-item v-if="getAdminRole() === 'SUPER_ADMIN'" label="讲师姓名">
+            <el-input v-model="searchForm.speakerName" placeholder="讲师姓名" clearable @keyup.enter="getList" />
+          </el-form-item>
+          <el-form-item v-if="getAdminRole() === 'SUPER_ADMIN'" label="讲师职称">
+            <el-input v-model="searchForm.speakerTitle" placeholder="讲师职称" clearable @keyup.enter="getList" />
+          </el-form-item>
+          <el-form-item v-if="getAdminRole() === 'SUPER_ADMIN'" label="讲座状态">
+            <el-select v-model="searchForm.status" placeholder="讲座状态" clearable @change="getList">
               <el-option label="待审核" value="PENDING" />
               <el-option label="已通过" value="APPROVED" />
               <el-option label="已拒绝" value="REJECTED" />
@@ -42,7 +48,7 @@
         </div>
         <div class="form-buttons">
           <el-form-item>
-            <el-button type="primary" @click="handleSearch">搜索</el-button>
+            <el-button type="primary" @click="getList">搜索</el-button>
             <el-button @click="resetSearch">重置</el-button>
           </el-form-item>
         </div>
@@ -69,6 +75,8 @@
           </el-tooltip>
         </template>
       </el-table-column>
+      <el-table-column v-if="getAdminRole() === 'SUPER_ADMIN'" prop="speakerName" label="讲师姓名" min-width="120" />
+      <el-table-column v-if="getAdminRole() === 'SUPER_ADMIN'" prop="speakerTitle" label="讲师职称" min-width="120" />
       <el-table-column prop="location" label="地点" min-width="180" />
       <el-table-column prop="tags" label="标签" min-width="150">
         <template #default="{ row }">
@@ -89,37 +97,52 @@
       <el-table-column label="人数" width="120">
         <template #default="{ row }">
           {{ row.enrollCount }}/{{ row.capacity }}
-        </template>
-      </el-table-column>
-      <el-table-column prop="status" label="状态" width="100">
+          </template>
+        </el-table-column>
+        <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
           <el-tag :type="getStatusType(row.status)">
             {{ getStatusText(row.status) }}
-          </el-tag>
-        </template>
-      </el-table-column>
+            </el-tag>
+          </template>
+        </el-table-column>
       <el-table-column label="操作" width="150" fixed="right">
         <template #default="{ row }">
-          <el-button-group>
-            <el-button type="primary" @click="handleEdit(row)" :disabled="row.status === 'REJECTED'">编辑</el-button>
-            <el-button type="danger" @click="handleDelete(row)" :disabled="row.status === 'REJECTED'">删除</el-button>
+          <el-button-group v-if="getAdminRole() === 'SUPER_ADMIN'">
+            <el-button
+              size="small"
+              :type="row.status === 'APPROVED' ? 'success' : 'default'"
+              :disabled="row.status === 'APPROVED' || row.status === 'REJECTED'"
+              @click="handleCheck(row, 'APPROVED')"
+            >通过</el-button>
+            <el-button
+              size="small"
+              :type="row.status === 'REJECTED' ? 'danger' : 'default'"
+              :disabled="row.status === 'APPROVED' || row.status === 'REJECTED'"
+              @click="handleCheck(row, 'REJECTED')"
+            >拒绝</el-button>
+          </el-button-group>
+          <el-button-group v-else>
+            <el-button type="primary" @click="handleEdit(row)" :disabled="row.status === 'REJECTED' || row.status === 'APPROVED'">编辑</el-button>
+            <el-button type="danger" @click="handleDelete(row)" :disabled="row.status === 'REJECTED' || row.status === 'APPROVED'">删除</el-button>
+            <el-button v-if="row.status === 'REJECTED'" type="warning" @click="handleRecreate(row)">再次提交</el-button>
           </el-button-group>
         </template>
       </el-table-column>
-    </el-table>
-
+      </el-table>
+      
     <!-- 分页 -->
     <div class="pagination-container">
-      <el-pagination
+        <el-pagination
         v-model:current-page="queryParams.pageNum"
         v-model:page-size="queryParams.pageSize"
-        :total="total"
+          :total="total"
         :page-sizes="[10, 20, 30, 50]"
         layout="total, sizes, prev, pager, next, jumper"
-        @size-change="handleSizeChange"
-        @current-change="handleCurrentChange"
-      />
-    </div>
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
+        />
+      </div>
 
     <!-- 创建/编辑讲座对话框 -->
     <el-dialog
@@ -177,14 +200,52 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 再次提交对话框 -->
+    <el-dialog
+      title="再次提交讲座审核"
+      v-model="recreateDialogVisible"
+      width="600px"
+      @close="() => { recreateForm.value = {}; currentRecreateId.value = null }"
+    >
+      <el-form
+        ref="recreateFormRef"
+        :model="recreateForm"
+        label-width="100px"
+      >
+        <el-form-item label="讲座标题" prop="title">
+          <el-input v-model="recreateForm.title" placeholder="请输入讲座标题" />
+        </el-form-item>
+        <el-form-item label="讲座描述" prop="description">
+          <el-input v-model="recreateForm.description" type="textarea" :rows="4" placeholder="请输入讲座描述" />
+        </el-form-item>
+        <el-form-item label="讲座时间" prop="lectureTime">
+          <el-date-picker v-model="recreateForm.lectureTime" type="datetime" placeholder="选择开始时间" value-format="YYYY-MM-DDTHH:mm:ss" />
+        </el-form-item>
+        <el-form-item label="地点" prop="location">
+          <el-input v-model="recreateForm.location" placeholder="请输入讲座地点" />
+        </el-form-item>
+        <el-form-item label="容量" prop="capacity">
+          <el-input-number v-model="recreateForm.capacity" :min="1" :max="1000" placeholder="请输入讲座容量" />
+        </el-form-item>
+        <el-form-item label="标签" prop="tags">
+          <el-input v-model="recreateForm.tags" placeholder="请输入标签" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="recreateDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleRecreateSubmit">提交</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { createLecture, updateLecture, getLectureList, deleteLecture } from '@/api/lecture'
+import { createLecture, updateLecture, getLectureList, deleteLecture, checkLecture, recreateLecture } from '@/api/lecture'
 import { formatDateTime } from '@/utils/format'
+import { getAdminRole } from '@/router'
 
 // 查询参数
 const queryParams = ref({
@@ -197,6 +258,8 @@ const searchForm = reactive({
   title: '',
   location: '',
   tags: '',
+  speakerName: '',
+  speakerTitle: '',
   status: ''
 })
 const timeRange = ref([])
@@ -220,6 +283,12 @@ const form = ref({
   lectureTime: '',
   capacity: 100
 })
+
+// 新增：再次提交相关
+const recreateDialogVisible = ref(false)
+const recreateFormRef = ref(null)
+const recreateForm = ref({})
+const currentRecreateId = ref(null)
 
 // 表单校验规则
 const rules = {
@@ -274,7 +343,14 @@ const getList = async () => {
     }
 
     const { data } = await getLectureList(params)
-    lectureList.value = data.records
+    const adminRole = getAdminRole()
+    if (adminRole === 'SUPER_ADMIN') {
+      // 超级管理员端：后端返回的讲座信息字段（例如 speakerName、speakerTitle）直接使用，无需额外映射
+      lectureList.value = data.records
+    } else {
+      // 讲师端：不做额外处理，直接赋值
+      lectureList.value = data.records
+    }
     total.value = data.total
   } catch (error) {
     ElMessage.error('获取讲座列表失败')
@@ -291,11 +367,13 @@ const handleSearch = () => {
 
 // 重置搜索
 const resetSearch = () => {
-  Object.keys(searchForm).forEach(key => {
-    searchForm[key] = ''
-  })
-  timeRange.value = []
-  queryParams.value.pageNum = 1
+  searchForm.title = ''
+  searchForm.location = ''
+  searchForm.tags = ''
+  searchForm.speakerName = ''
+  searchForm.speakerTitle = ''
+  searchForm.status = ''
+  timeRange.value = null
   getList()
 }
 
@@ -460,6 +538,52 @@ const getStatusText = (status) => {
     'REJECTED': '已拒绝'
   }
   return map[status] || '未知'
+}
+
+// 审核讲座（超级管理员）
+const handleCheck = async (row, status) => {
+  if (row.status === status) return
+  try {
+    await checkLecture(row.id, status)
+    ElMessage.success('操作成功')
+    getList()
+  } catch (e) {
+    ElMessage.error('操作失败')
+  }
+}
+
+// 新增：再次提交相关
+const handleRecreate = (row) => {
+  recreateDialogVisible.value = true
+  currentRecreateId.value = row.id
+  // 预填充表单
+  recreateForm.value = {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    lectureTime: row.lectureTime,
+    location: row.location,
+    capacity: row.capacity,
+    tags: row.tags,
+    resourceUrl: row.resourceUrl || '',
+    ragDocId: row.ragDocId || ''
+  }
+}
+
+const handleRecreateSubmit = async () => {
+  if (!recreateFormRef.value) return
+  await recreateFormRef.value.validate(async (valid) => {
+    if (valid) {
+      try {
+        await recreateLecture(recreateForm.value)
+        ElMessage.success('已重新提交审核')
+        recreateDialogVisible.value = false
+        getList()
+      } catch (e) {
+        ElMessage.error('提交失败')
+      }
+    }
+  })
 }
 
 onMounted(() => {

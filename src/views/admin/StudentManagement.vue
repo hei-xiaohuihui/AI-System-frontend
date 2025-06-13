@@ -131,8 +131,8 @@ const fetchStudentList = async () => {
     })
     console.log('Response:', response)
     if (response.code === 200) {
-      studentList.value = response.data.records
-      total.value = response.data.total
+    studentList.value = response.data.records
+    total.value = response.data.total
     }
   } catch (error) {
     console.error('Error:', error)

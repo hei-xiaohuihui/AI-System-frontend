@@ -25,10 +25,21 @@ export function updateLecture(data) {
   })
 }
 
-// 讲师分页查询讲座
+// 讲师/超级管理员分页查询讲座
 export function getLectureList(params) {
+  // 动态选择接口
+  let url = '/admin/lecturer/lectures/page'
+  try {
+    const adminInfo = localStorage.getItem('adminInfo')
+    if (adminInfo) {
+      const { adminRole } = JSON.parse(adminInfo)
+      if (adminRole === 'SUPER_ADMIN') {
+        url = '/admin/superAdmin/lectures/page'
+      }
+    }
+  } catch (e) {}
   return request({
-    url: '/admin/lecturer/lectures/page',
+    url,
     method: 'get',
     params
   })
@@ -40,5 +51,23 @@ export function deleteLecture(id) {
     url: '/admin/lecturer/lectures/delete',
     method: 'delete',
     params: { id: Number(id) }
+  })
+}
+
+// 超级管理员审核讲座
+export function checkLecture(id, status) {
+  return request({
+    url: '/admin/superAdmin/lectures/check',
+    method: 'put',
+    params: { id, status }
+  })
+}
+
+// 讲师端重新提交讲座审核
+export function recreateLecture(data) {
+  return request({
+    url: '/admin/lecturer/lectures/recreate',
+    method: 'post',
+    data
   })
 } 

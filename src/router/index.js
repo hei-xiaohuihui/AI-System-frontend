@@ -79,7 +79,7 @@ const router = createRouter({
 // 管理员路由守卫
 const isAdminRoute = (path) => path.startsWith('/admin')
 const isAdminLoggedIn = () => !!localStorage.getItem('adminToken')
-const getAdminRole = () => {
+export const getAdminRole = () => {
   const adminInfo = localStorage.getItem('adminInfo')
   if (adminInfo) {
     try {
