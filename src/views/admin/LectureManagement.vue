@@ -99,26 +99,13 @@
           {{ row.enrollCount }}/{{ row.capacity }}
           </template>
         </el-table-column>
-      <el-table-column prop="resourceUrl" label="讲座资料" width="120">
-        <template #default="{ row }">
-          <el-link
-            v-if="row.resourceUrl"
-            type="primary"
-            :href="row.resourceUrl"
-            target="_blank"
-          >
-            查看资料
-          </el-link>
-          <span v-else>暂无资料</span>
-        </template>
-      </el-table-column>
         <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
           <el-tag :type="getStatusType(row.status)">
             {{ getStatusText(row.status) }}
-            </el-tag>
-          </template>
-        </el-table-column>
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="150" fixed="right">
         <template #default="{ row }">
           <el-button-group v-if="getAdminRole() === 'SUPER_ADMIN'">
@@ -142,8 +129,8 @@
           </el-button-group>
         </template>
       </el-table-column>
-      </el-table>
-      
+    </el-table>
+    
     <!-- 分页 -->
     <div class="pagination-container">
         <el-pagination
@@ -368,6 +355,9 @@ const rules = {
   capacity: [
     { required: true, message: '请输入讲座容量', trigger: 'change' },
     { type: 'number', min: 1, max: 1000, message: '容量范围在 1 到 1000 之间', trigger: 'change' }
+  ],
+  resourceUrl: [
+    { required: true, message: '请上传讲座资料', trigger: 'change' }
   ]
 }
 
@@ -564,7 +554,9 @@ const handleSubmit = async () => {
             location: form.value.location,
             tags: form.value.tags,
             lectureTime: form.value.lectureTime,
-            capacity: Number(form.value.capacity)
+            capacity: Number(form.value.capacity),
+            resourceUrl: form.value.resourceUrl,
+            ragDocId: form.value.ragDocId
           }
           
           await createLecture(createData, fileList.value[0].raw)
@@ -696,58 +688,6 @@ const handleRecreateSubmit = async () => {
       }
     }
   })
-}
-
-// 新增：文件上传相关
-const fileList = ref([])
-const handleCustomUpload = async ({ file }) => {
-  try {
-    // 直接存储文件对象，不再单独上传
-    fileList.value = [{
-      name: file.name,
-      raw: file // 保存原始文件对象
-    }]
-    ElMessage.success('文件已选择')
-  } catch (error) {
-    ElMessage.error('文件处理失败')
-  }
-}
-
-const beforeUpload = (file) => {
-  const allowedExtensions = ['.pdf', '.doc', '.docx']
-  const extension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
-  if (!allowedExtensions.includes(extension)) {
-    ElMessage.error('只能上传 PDF 或 Word 文件')
-    return false
-  }
-  return true
-}
-
-const handleRemoveFile = () => {
-  form.value.resourceUrl = ''
-  form.value.ragDocId = ''
-  fileList.value = []
-  ElMessage.success('文件移除成功')
-}
-
-// 新增：再次提交文件处理函数
-const handleRecreateUpload = async ({ file }) => {
-  try {
-    // 直接存储文件对象，不再单独上传
-    recreateFileList.value = [{
-      name: file.name,
-      raw: file // 保存原始文件对象
-    }]
-    ElMessage.success('文件已选择')
-  } catch (error) {
-    ElMessage.error('文件处理失败')
-  }
-}
-
-const handleRecreateRemoveFile = () => {
-  recreateForm.value.resourceUrl = ''
-  recreateFileList.value = []
-  ElMessage.success('文件移除成功')
 }
 
 onMounted(() => {
