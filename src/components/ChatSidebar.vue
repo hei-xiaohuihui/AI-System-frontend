@@ -29,6 +29,7 @@
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item @click.stop="showUserProfile">个人中心</el-dropdown-item>
+            <el-dropdown-item @click.stop="navigateToLectures">讲座中心</el-dropdown-item>
             <el-dropdown-item divided @click.stop="handleLogout">退出登录</el-dropdown-item>
           </el-dropdown-menu>
         </template>
@@ -57,6 +58,10 @@ const emit = defineEmits(['create-chat', 'switch-chat', 'delete-chat', 'show-pro
 
 const userStore = useUserStore()
 const router = useRouter()
+
+const navigateToLectures = () => {
+  router.push('/lectures')
+}
 
 const createNewChat = () => {
   emit('create-chat')

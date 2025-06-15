@@ -97,9 +97,24 @@
       <el-table-column label="人数" width="120">
         <template #default="{ row }">
           {{ row.enrollCount }}/{{ row.capacity }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="status" label="状态" width="100">
+        </template>
+      </el-table-column>
+      <el-table-column label="文档" width="100">
+        <template #default="{ row }">
+          <el-link
+            v-if="row.resourceUrl"
+            type="primary"
+            :href="row.resourceUrl"
+            target="_blank"
+            :underline="false"
+          >
+            <el-icon><Document /></el-icon>
+            查看
+          </el-link>
+          <span v-else>无文档</span>
+        </template>
+      </el-table-column>
+      <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
           <el-tag :type="getStatusType(row.status)">
             {{ getStatusText(row.status) }}
@@ -192,7 +207,7 @@
             placeholder="请输入讲座容量"
           />
         </el-form-item>
-        <el-form-item label="讲座资料" prop="resourceUrl">
+        <el-form-item label="讲座资料">
           <el-upload
             class="upload-demo"
             :http-request="handleCustomUpload"
@@ -250,7 +265,7 @@
         <el-form-item label="标签" prop="tags">
           <el-input v-model="recreateForm.tags" placeholder="请输入标签" />
         </el-form-item>
-        <el-form-item label="讲座资料" prop="resourceUrl">
+        <el-form-item label="讲座资料">
           <el-upload
             class="upload-demo"
             :http-request="handleRecreateUpload"
@@ -285,7 +300,7 @@ import { createLecture, updateLecture, getLectureList, deleteLecture, checkLectu
 import { uploadFile } from '@/api/admin'
 import { formatDateTime } from '@/utils/format'
 import { getAdminRole } from '@/router'
-import { Upload } from '@element-plus/icons-vue'
+import { Upload, Document } from '@element-plus/icons-vue'
 
 // 查询参数
 const queryParams = ref({
@@ -333,6 +348,54 @@ const recreateForm = ref({})
 const currentRecreateId = ref(null)
 const recreateFileList = ref([])
 
+// 文件上传相关
+const fileList = ref([])
+
+const handleCustomUpload = async ({ file }) => {
+  try {
+    fileList.value = [{
+      name: file.name,
+      raw: file
+    }]
+    ElMessage.success('文件已选择')
+  } catch (error) {
+    ElMessage.error('文件处理失败')
+  }
+}
+
+const beforeUpload = (file) => {
+  const allowedExtensions = ['.pdf', '.doc', '.docx']
+  const extension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
+  if (!allowedExtensions.includes(extension)) {
+    ElMessage.error('只能上传 PDF 或 Word 文件')
+    return false
+  }
+  return true
+}
+
+const handleRemoveFile = () => {
+  fileList.value = []
+  ElMessage.success('文件移除成功')
+}
+
+// 再次提交文件处理函数
+const handleRecreateUpload = async ({ file }) => {
+  try {
+    recreateFileList.value = [{
+      name: file.name,
+      raw: file
+    }]
+    ElMessage.success('文件已选择')
+  } catch (error) {
+    ElMessage.error('文件处理失败')
+  }
+}
+
+const handleRecreateRemoveFile = () => {
+  recreateFileList.value = []
+  ElMessage.success('文件移除成功')
+}
+
 // 表单校验规则
 const rules = {
   title: [
@@ -355,9 +418,6 @@ const rules = {
   capacity: [
     { required: true, message: '请输入讲座容量', trigger: 'change' },
     { type: 'number', min: 1, max: 1000, message: '容量范围在 1 到 1000 之间', trigger: 'change' }
-  ],
-  resourceUrl: [
-    { required: true, message: '请上传讲座资料', trigger: 'change' }
   ]
 }
 
@@ -542,8 +602,6 @@ const handleSubmit = async () => {
             tags: form.value.tags,
             lectureTime: form.value.lectureTime,
             capacity: Number(form.value.capacity),
-            resourceUrl: form.value.resourceUrl,
-            ragDocId: form.value.ragDocId
           }
           await updateLecture(updateData)
           ElMessage.success('更新成功')
@@ -555,8 +613,6 @@ const handleSubmit = async () => {
             tags: form.value.tags,
             lectureTime: form.value.lectureTime,
             capacity: Number(form.value.capacity),
-            resourceUrl: form.value.resourceUrl,
-            ragDocId: form.value.ragDocId
           }
           
           await createLecture(createData, fileList.value[0].raw)

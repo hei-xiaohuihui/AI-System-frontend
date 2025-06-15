@@ -18,9 +18,21 @@ const userRoutes = [
     component: () => import('@/views/LoginView.vue')
   },
   {
+    path: '/dashboard',
+    name: 'dashboard',
+    component: () => import('@/views/UserDashboard.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/chat',
     name: 'chat',
     component: () => import('@/views/ChatView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/lectures',
+    name: 'lectures',
+    component: () => import('@/views/user/LectureView.vue'),
     meta: { requiresAuth: true }
   }
 ]
@@ -137,7 +149,7 @@ router.beforeEach((to, from, next) => {
   if (to.meta.requiresAuth && !userStore.isAuthenticated) {
     next('/login')
   } else if (to.path === '/login' && userStore.isAuthenticated) {
-    next('/chat')
+    next('/dashboard')
   } else {
     next()
   }

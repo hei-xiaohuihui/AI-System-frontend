@@ -117,7 +117,7 @@ const handleLogin = async () => {
     if (valid) {
       const success = await userStore.login(loginForm)
       if (success) {
-        await router.push({ path: '/chat', replace: true })
+        await router.push({ path: '/dashboard', replace: true })
       }
     }
   })
