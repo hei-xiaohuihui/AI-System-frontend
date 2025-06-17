@@ -372,7 +372,7 @@ const sendMessage = async () => {
       isLoading.value = false
       
       if (chatList.value[0]?.id === sendingChatId && chatList.value[0]?.title === '新对话') {
-        chatList.value[0].title = message.content.slice(0, 20) + (message.content.length > 20 ? '...' : '')
+        chatList.value[0].title = message.content.slice(0, 20).replace('/no_think', '') + (message.content.length > 20 ? '...' : '')
       }
 
       await nextTick()
@@ -482,7 +482,7 @@ const loadChatHistory = async (chatId, sessionId) => {
       if (firstUserMessage) {
         const chat = chatList.value.find(c => c.id === chatId)
         if (chat) {
-          chat.title = firstUserMessage.content.slice(0, 20) + (firstUserMessage.content.length > 20 ? '...' : '')
+          chat.title = firstUserMessage.content.slice(0, 20).replace('/no_think', '') + (firstUserMessage.content.length > 20 ? '...' : '')
         }
       }
       
