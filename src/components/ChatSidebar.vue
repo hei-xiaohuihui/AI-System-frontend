@@ -1,7 +1,7 @@
 <template>
   <div class="sidebar">
     <div class="sidebar-header">
-      <h1 class="system-title">AI客服系统</h1>
+      <h1 class="system-title">河小嗨AI智能助手</h1>
       <el-button type="primary" @click="createNewChat" plain>
         <el-icon><Plus /></el-icon>新对话
       </el-button>

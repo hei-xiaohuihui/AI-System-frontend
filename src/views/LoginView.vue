@@ -1,6 +1,6 @@
 <template>
   <div class="login-container">
-    <h1 class="system-title">AI客服系统</h1>
+    <h1 class="system-title">河小嗨AI智能助手</h1>
     <el-card class="login-card">
       <el-tabs v-model="activeTab" class="demo-tabs">
         <el-tab-pane label="登录" name="login">

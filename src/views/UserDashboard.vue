@@ -1,18 +1,18 @@
 <template>
   <div class="dashboard-container">
-    <h1 class="welcome-title">欢迎使用AI客服系统</h1>
+    <h1 class="welcome-title">欢迎使用河小嗨AI智能助手平台</h1>
     
     <div class="feature-cards">
       <el-card class="feature-card" @click="navigateToChat">
         <el-icon class="feature-icon"><ChatRound /></el-icon>
-        <h2>智能客服</h2>
+        <h2>智能助手</h2>
         <p>与AI助手进行对话，获取即时帮助和解答</p>
       </el-card>
       
       <el-card class="feature-card" @click="navigateToLectures">
         <el-icon class="feature-icon"><Calendar /></el-icon>
         <h2>讲座中心</h2>
-        <p>浏览和报名参加各类讲座活动</p>
+        <p>直接浏览和报名参加学校各类讲座活动</p>
       </el-card>
     </div>
 

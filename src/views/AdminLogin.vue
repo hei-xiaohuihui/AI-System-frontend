@@ -1,7 +1,7 @@
 <template>
   <div class="admin-login">
     <div class="login-container">
-      <h1>后台管理系统</h1>
+      <h1>河小嗨后台管理系统</h1>
       <div class="login-form">
         <div class="form-group">
           <input 

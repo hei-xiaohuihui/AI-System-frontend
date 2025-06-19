@@ -1,7 +1,7 @@
 <template>
   <div class="admin-dashboard">
     <header class="dashboard-header">
-      <h1>后台管理系统</h1>
+      <h1>河小嗨后台管理系统</h1>
       <button class="logout-button" @click="handleLogout">退出登录</button>
     </header>
     <div class="dashboard-content">
