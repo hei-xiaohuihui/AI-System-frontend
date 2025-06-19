@@ -56,8 +56,9 @@
         <template v-if="!isSuper">
           <el-form-item label="性别" prop="gender">
             <el-select v-model="form.gender" placeholder="请选择性别">
-              <el-option label="男" value="MALE" />
-              <el-option label="女" value="FEMALE" />
+              <el-option label="未知" :value="0" />
+              <el-option label="男" :value="1" />
+              <el-option label="女" :value="2" />
             </el-select>
           </el-form-item>
 
