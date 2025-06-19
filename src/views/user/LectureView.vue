@@ -137,11 +137,14 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import axios from 'axios'
+import axios from '@/utils/request'
 import dayjs from 'dayjs'
 import { useRouter } from 'vue-router'
+import { useUserStore } from '@/stores/user'
+import request from '@/utils/request'
 
 const router = useRouter()
+const userStore = useUserStore()
 const lectures = ref([])
 const enrolledLectures = ref([])
 const activeTab = ref('all')
@@ -211,19 +214,37 @@ const formatDateTime = (datetime) => {
   return dayjs(datetime).format('YYYY-MM-DD HH:mm')
 }
 
+// 添加 token 验证函数
+const checkToken = async () => {
+  try {
+    const response = await request.get('/user/auth/checkToken')
+    if (response.code !== 200) {
+      throw new Error('Token validation failed')
+    }
+    return true
+  } catch (error) {
+    userStore.logout()
+    await router.push('/login')
+    return false
+  }
+}
+
 const fetchLectures = async () => {
   try {
-    const response = await axios.get('http://localhost:7816/user/lectures/page', {
+    // 先验证 token
+    if (!await checkToken()) return
+
+    const response = await axios.get('/user/lectures/page', {
       params: {
         ...currentSearchForm.value,
         pageNum: currentPage.value,
         pageSize: pageSize.value
       }
     })
-    if (response.data.code === 200) {
-      lectures.value = response.data.data.records
+    if (response.code === 200) {
+      lectures.value = response.data.records
       if (activeTab.value === 'all') {
-        total.value = response.data.data.total
+        total.value = response.data.total
       }
     }
   } catch (error) {
@@ -233,17 +254,20 @@ const fetchLectures = async () => {
 
 const fetchEnrolledLectures = async () => {
   try {
-    const response = await axios.get('http://localhost:7816/user/lectures/getEnroll', {
+    // 先验证 token
+    if (!await checkToken()) return
+
+    const response = await axios.get('/user/lectures/getEnroll', {
       params: {
         ...currentSearchForm.value,
         pageNum: currentPage.value,
         pageSize: pageSize.value
       }
     })
-    if (response.data.code === 200) {
-      enrolledLectures.value = response.data.data.records
+    if (response.code === 200) {
+      enrolledLectures.value = response.data.records
       if (activeTab.value === 'enrolled') {
-        total.value = response.data.data.total
+        total.value = response.data.total
       }
     }
   } catch (error) {
@@ -293,10 +317,13 @@ const resetSearch = () => {
 
 const handleEnroll = async (lectureId) => {
   try {
-    const response = await axios.post('http://localhost:7816/user/lectures/enroll', null, {
+    // 先验证 token
+    if (!await checkToken()) return
+
+    const response = await axios.post('/user/lectures/enroll', null, {
       params: { lectureId }
     })
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success('报名成功')
       await Promise.all([
         fetchLectures(),
@@ -310,10 +337,13 @@ const handleEnroll = async (lectureId) => {
 
 const handleCancelEnroll = async (lectureId) => {
   try {
-    const response = await axios.delete('http://localhost:7816/user/lectures/cancel', {
+    // 先验证 token
+    if (!await checkToken()) return
+
+    const response = await axios.delete('/user/lectures/cancel', {
       params: { lectureId }
     })
-    if (response.data.code === 200) {
+    if (response.code === 200) {
       ElMessage.success('取消报名成功')
       await Promise.all([
         fetchLectures(),
@@ -353,7 +383,16 @@ const handleTabClick = () => {
 }
 
 // Lifecycle
-onMounted(() => {
+onMounted(async () => {
+  // 验证用户是否已登录
+  if (!userStore.isAuthenticated) {
+    await router.push('/login')
+    return
+  }
+
+  // 验证 token
+  if (!await checkToken()) return
+
   // 初始化时加载两个列表的数据
   Promise.all([
     fetchLectures(),

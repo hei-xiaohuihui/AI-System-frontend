@@ -4,15 +4,18 @@ import router from '../router'
 
 // 创建 axios 实例
 const service = axios.create({
-  baseURL: 'http://localhost:7816', // API 的 base_url
+  baseURL: 'http://192.168.198.129:7816', // API 的 base_url 生产环境
   timeout: 15000 // 请求超时时间
 })
 
 // 请求拦截器
 service.interceptors.request.use(
   config => {
-    // 从 localStorage 获取 token
-    const token = localStorage.getItem('adminToken')
+    // 根据请求路径判断使用哪个token
+    const isAdminRequest = config.url.startsWith('/admin/')
+    const token = isAdminRequest 
+      ? localStorage.getItem('adminToken')
+      : localStorage.getItem('token')
     
     // 如果 token 存在，则添加到请求头
     if (token) {
