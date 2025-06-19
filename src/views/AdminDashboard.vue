@@ -27,7 +27,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import request from '../utils/request'
 
 const router = useRouter()
 const stats = ref({
@@ -44,14 +44,10 @@ const fetchStats = async () => {
       return
     }
 
-    const response = await axios.get('http://localhost:7816/admin/stats', {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    })
-
-    if (response.data.code === 200) {
-      stats.value = response.data.data
+    const response = await request.get('/admin/stats')
+    
+    if (response.code === 200) {
+      stats.value = response.data
     }
   } catch (error) {
     console.error('Failed to fetch stats:', error)

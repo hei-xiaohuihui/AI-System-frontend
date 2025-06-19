@@ -104,7 +104,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { User, Calendar, DataLine, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import axios from 'axios'
+import request from '@/utils/request'
 
 const router = useRouter()
 const loading = ref(false)
@@ -140,15 +140,15 @@ const fetchStatistics = async () => {
 const fetchPendingLectures = async () => {
   loading.value = true
   try {
-    const response = await axios.get('/admin/superAdmin/lectures/page', {
+    const response = await request.get('/admin/superAdmin/lectures/page', {
       params: {
         page: 1,
         pageSize: 5,
         status: 'PENDING'
       }
     })
-    if (response.data.code === 200) {
-      pendingLectures.value = response.data.data.records
+    if (response.code === 200) {
+      pendingLectures.value = response.data.records
     }
   } catch (error) {
     ElMessage.error('获取待审核讲座失败')

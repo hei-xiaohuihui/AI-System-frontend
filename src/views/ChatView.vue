@@ -297,12 +297,9 @@ const sendMessage = async () => {
       isLoading.value = true
       streamingStateMap.value.set(sendingChatId, true)
 
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:7816'
-      const url = `${baseUrl}/user/chat/model`
-
       try {
-        const checkResponse = await axios.get('/user/auth/checkToken')
-        if (checkResponse.data.code !== 200) {
+        const checkResponse = await request.get('/user/auth/checkToken')
+        if (checkResponse.code !== 200) {
           throw new Error('Token validation failed')
         }
       } catch (error) {
@@ -316,6 +313,7 @@ const sendMessage = async () => {
       }
 
       const axiosInstance = axios.create({
+        baseURL: import.meta.env.VITE_API_BASE_URL,
         timeout: 600000,
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
@@ -350,7 +348,7 @@ const sendMessage = async () => {
         }
       )
 
-      const response = await axiosInstance.get(url, {
+      const response = await axiosInstance.get('/user/chat/model', {
         params: {
           sessionId: currentChat.sessionId,
           message: message.content

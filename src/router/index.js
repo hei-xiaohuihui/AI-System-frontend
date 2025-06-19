@@ -110,9 +110,14 @@ router.beforeEach((to, from, next) => {
   if (isAdminRoute(to.path)) {
     // 如果是管理员登录页，直接通过
     if (to.path === '/admin/login') {
-      // 如果已经登录，直接跳转到仪表盘
+      // 如果已经登录，根据角色跳转到对应页面
       if (isAdminLoggedIn()) {
-        next('/admin/dashboard')
+        const adminRole = getAdminRole()
+        if (adminRole === 'LECTURER') {
+          next('/admin/lectures')
+        } else {
+          next('/admin/dashboard')
+        }
         return
       }
       next()
@@ -129,7 +134,7 @@ router.beforeEach((to, from, next) => {
     const adminRole = getAdminRole()
     if (adminRole === 'LECTURER') {
       // 讲师只能访问讲座管理页面和个人信息页面
-      if (to.path !== '/admin/lectures' && to.path !== '/admin/dashboard' && to.path !== '/admin/profile') {
+      if (to.path !== '/admin/lectures' && to.path !== '/admin/profile') {
         next('/admin/lectures')
         return
       }
